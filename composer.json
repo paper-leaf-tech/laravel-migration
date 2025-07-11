@@ -13,11 +13,9 @@
     "php": "^8.2",
     "spatie/laravel-package-tools": "^1.92"
   },
-  "extra": {
-    "laravel": {
-      "providers": [
-        "PaperleafTech\\LaravelMigration\\MediaLibraryServiceProvider"
-      ]
+  "autoload": {
+    "psr-4": {
+      "PaperleafTech\\LaravelMigration\\": "src"
     }
   }
 }
