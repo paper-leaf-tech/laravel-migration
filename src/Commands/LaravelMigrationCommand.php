@@ -42,7 +42,8 @@ class LaravelMigrationCommand extends Command
     public function handle(): int
     {
         $this->line('I work');
-        return;
+        return Command::SUCCESS;
+
         // dd( $this->options(), $this->arguments() );
         $opts = $this->options();
         $args = $this->arguments();
