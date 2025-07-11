@@ -1,7 +1,6 @@
 {
   "name": "paper-leaf-tech/laravel-migration",
   "description": "A package to manage Laravel Migrations",
-  "type": "library",
   "license": "MIT",
   "authors": [
     {
