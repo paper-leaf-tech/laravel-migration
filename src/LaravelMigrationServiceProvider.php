@@ -2,7 +2,7 @@
 
 namespace PaperleafTech\LaravelMigration;
 
-use PaperleafTech\Commands\LaravelMigrationCommand\LaravelMigrationCommand;
+use PaperleafTech\LaravelMigration\Commands\LaravelMigrationCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
