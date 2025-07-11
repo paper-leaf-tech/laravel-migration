@@ -3,6 +3,7 @@
 namespace PaperleafTech\LaravelMigration;
 
 use PaperleafTech\LaravelMigration\Commands\LaravelMigrationCommand;
+use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
@@ -12,15 +13,12 @@ class LaravelMigrationServiceProvider extends PackageServiceProvider
     {
         $package
             ->name('laravel-migration')
-            ->hasConfigFile()
-            ->hasCommand(LaravelMigrationCommand::class);
-            // ->hasInstallCommand(function(InstallCommand $command) {
-            //     $command
-            //         ->publishConfigFile()
-            //         ->publishAssets()
-            //         ->publishMigrations()
-            //         ->copyAndRegisterServiceProviderInApp()
-            //         ->askToStarRepoOnGitHub();
-            // });
+            ->hasConfigFile('laravel-migration')
+            ->hasCommands([
+                LaravelMigrationCommand::class,
+            ])
+            ->hasInstallCommand(function(InstallCommand $command) {
+                $command->publishConfigFile();
+            });
     }
 }

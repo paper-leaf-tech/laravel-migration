@@ -23,11 +23,17 @@ class LaravelMigrationCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'paperleaf:migrate_db 
+    protected $signature = 'laravel-migration:run 
         {table? : Migrate a single table see MigrationSeeder $table_job_mapping}
-        {--S|sync} {--A|all : Migrate all tables} 
-        {--group= : Group index (start from 0) to start the migrate all tables on}
-        {--Y|skip-confirm : Skips confirmation when not in production}';
+        {--S|sync : Migrate the data synchronously. Ignored if we are migrating all tables}
+        {--A|all : Migrate all tables} 
+        {--group= : Group index (start from 0) to start the migrate all tables on}';
+
+    protected $source;
+    protected $destination;
+    protected $chunkSize;
+    protected $mapping;
+    protected $dependancyMapping;
 
     /**
      * The console command description.
@@ -36,15 +42,35 @@ class LaravelMigrationCommand extends Command
      */
     protected $description = 'Migrates the old database records into the new database.';
 
+    public function __construct()
+    {
+        parent::__construct();
+
+        $this->source            = config('laravel-migration.database_connection');
+        $this->destination       = config('laravel-migration.migration_connection');
+        $this->chunkSize         = config('laravel-migration.default_chunk_size');
+        $this->mapping           = config('laravel-migration.table_job_mapping');
+        $this->dependancyMapping = config('laravel-migration.table_dependency_mapping');
+    }
+
+    public function verifyEnvironment(): bool
+    {
+        // Check if the migration source and destination are set, and valid.
+        $source_connection      = config('database.connections.'. $this->source);
+        $destination_connection = config('database.connections.'. $this->destination);
+
+        dd($source_connection, $destination_connection);
+    }
+
     /**
      * Execute the console command.
      */
     public function handle(): int
     {
-        $this->line('I work');
-        return Command::SUCCESS;
+        if ( ! $this->verifyEnvironment() ) {
+            return Command::FAILURE;
+        };
 
-        // dd( $this->options(), $this->arguments() );
         $opts = $this->options();
         $args = $this->arguments();
 
@@ -62,7 +88,7 @@ class LaravelMigrationCommand extends Command
             $this->migrateAllTables($group);
         } // Or a single table
         else {
-            $this->migrateTable($args['table'], (bool)$opts['sync']);
+            $this->migrateTable($args['table'], (bool) $opts['sync']);
         }
 
         return Command::SUCCESS;
