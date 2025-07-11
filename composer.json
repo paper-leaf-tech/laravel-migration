@@ -16,5 +16,12 @@
     "psr-4": {
       "PaperleafTech\\LaravelMigration\\": "src"
     }
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "PaperleafTech\\LaravelMigration\\LaravelMigrationServiceProvider"
+      ]
+    }
   }
 }
