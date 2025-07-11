@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace PaperleafTech\Commands\LaravelMigrationCommand;
 
 use App\Jobs\Migration\GenericJobSpawner;
 use App\Models\MigrationMapping;

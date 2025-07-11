@@ -1,6 +1,6 @@
 <?php
 
-namespace Paperleaf\LaravelMigration;
+namespace PaperleafTech\LaravelMigration;
 
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;

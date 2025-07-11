@@ -1,5 +1,5 @@
 {
-  "name": "paperleaf/laravel-migration",
+  "name": "paperleaf-tech/laravel-migration",
   "description": "A package to manage Laravel Migrations",
   "type": "library",
   "license": "MIT",
@@ -15,7 +15,7 @@
   "extra": {
     "laravel": {
       "providers": [
-        "Paperleaf\\LaravelMigration\\MediaLibraryServiceProvider"
+        "PaperleafTech\\LaravelMigration\\MediaLibraryServiceProvider"
       ]
     }
   }
