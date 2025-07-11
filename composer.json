@@ -5,9 +5,18 @@
   "license": "MIT",
   "authors": [
     {
-      "name": "John Doe",
-      "email": "john@doe.com"
+      "name": "Brendan Angerman",
+      "email": "brendan@paper-leaf.com"
     }
   ],
-  "require": {}
+  "require": {
+    "spatie/laravel-package-tools": "^1.92"
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "Paperleaf\\LaravelMigration\\MediaLibraryServiceProvider"
+      ]
+    }
+  }
 }
