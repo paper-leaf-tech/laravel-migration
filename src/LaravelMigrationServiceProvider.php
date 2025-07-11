@@ -2,10 +2,11 @@
 
 namespace PaperleafTech\LaravelMigration;
 
+use PaperleafTech\Commands\LaravelMigrationCommand\LaravelMigrationCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
 
-class MediaLibraryServiceProvider extends PackageServiceProvider
+class LaravelMigrationServiceProvider extends PackageServiceProvider
 {
     public function configurePackage(Package $package): void
     {
