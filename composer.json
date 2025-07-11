@@ -1,0 +1,13 @@
+{
+  "name": "paperleaf/laravel-migration",
+  "description": "A package to manage Laravel Migrations",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "John Doe",
+      "email": "john@doe.com"
+    }
+  ],
+  "require": {}
+}
