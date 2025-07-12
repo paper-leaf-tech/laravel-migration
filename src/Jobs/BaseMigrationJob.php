@@ -71,7 +71,7 @@ class BaseMigrationJob implements ShouldQueue
     /**
      * This function is implemented in child class.
      */
-    public function getMappingKey(object $item): string
+    public function getItemKey(object $item): string
     {
         return '';
     }
@@ -91,7 +91,7 @@ class BaseMigrationJob implements ShouldQueue
     public function lookupRecordFromMapping(object $item, string $model_class): Model
     {
         $lookup = (new MigrationMapping)->getItem(
-            $this->getMappingKey($item),
+            $this->getItemKey($item),
             $this->table,
             $model_class
         );
@@ -114,7 +114,7 @@ class BaseMigrationJob implements ShouldQueue
     public function saveMappingData(Model $record, object $item): void
     {
         (new MigrationMapping)->setItem(
-            $this->getMappingKey($item),
+            $this->getItemKey($item),
             $this->table,
             get_class($record),
             $record->id
