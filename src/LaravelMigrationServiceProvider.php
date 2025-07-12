@@ -2,7 +2,8 @@
 
 namespace PaperleafTech\LaravelMigration;
 
-use PaperleafTech\LaravelMigration\Commands\LaravelMigrationCommand;
+use PaperleafTech\LaravelMigration\Commands\MigrationCommand;
+use PaperleafTech\LaravelMigration\Commands\NewMigrationJobCommand;
 use Spatie\LaravelPackageTools\Commands\InstallCommand;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -14,11 +15,17 @@ class LaravelMigrationServiceProvider extends PackageServiceProvider
         $package
             ->name('laravel-migration')
             ->hasConfigFile('laravel-migration')
-            ->hasCommands([
-                LaravelMigrationCommand::class,
+            ->hasMigrations([
+                'create_migration_data_table',
+                'create_migration_mapping_table'
             ])
-            ->hasInstallCommand(function(InstallCommand $command) {
-                $command->publishConfigFile();
+            ->hasCommands([
+                MigrationCommand::class,
+                NewMigrationJobCommand::class,
+            ])
+            ->hasInstallCommand(function (InstallCommand $command) {
+                $command->publishConfigFile()
+                    ->publishMigrations();
             });
     }
 }
