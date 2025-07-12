@@ -25,6 +25,7 @@ class MigrationCommand extends Command
      */
     protected $signature = 'migration:run 
         {table? : Migrate a single table see config/laravel-migration.php table_job_mapping}
+        {--A|all : Migrate all tables}
         {--S|sync : Migrate the data synchronously. Ignored if migrating all tables}
         {--group= : Group index (start from 0) to start the migrate all tables on}';
 

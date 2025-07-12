@@ -16,8 +16,8 @@ class MigrationMapping extends Model
      * Get an item from the database, possibly returning null if it is not found.
      *
      * @param integer|string $old_id - Sometimes a compound index.
-     * @param string $old_tablename
-     * @param string $model_type
+     * @param string $old_tablename - The name of the old database table
+     * @param string $model_type - The Model::class of the new record
      * @return MigrationMapping|null
      */
     public function getItem(int|string $old_id, string $old_tablename, string $model_type): ?MigrationMapping
@@ -32,10 +32,10 @@ class MigrationMapping extends Model
     /**
      * Persist a new database mapping row to the database.
      *
-     * @param integer|string $old_id
-     * @param string $old_tablename
-     * @param string $model_type
-     * @param integer $model_id
+     * @param integer|string $old_id - Sometimes a compound index.
+     * @param string $old_tablename - The name of the old database table
+     * @param string $model_type - The Model::class of the new record
+     * @param integer $model_id - The id of the new record
      * @return void
      */
     public function setItem(int|string $old_id, string $old_tablename, string $model_type, int $model_id): void
@@ -59,7 +59,7 @@ class MigrationMapping extends Model
             return false;
         }
 
-        return (new $this->model_type())->newQuery()->whereKey($this->model_id)->exists();
+        return (new $this->model_type)->newQuery()->whereKey($this->model_id)->exists();
     }
 
     /**
@@ -69,6 +69,6 @@ class MigrationMapping extends Model
      */
     public function getRecord(): Model
     {
-        return (new $this->model_type())->find($this->model_id);
+        return (new $this->model_type)->find($this->model_id);
     }
 }

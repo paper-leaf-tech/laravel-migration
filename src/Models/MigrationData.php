@@ -43,7 +43,7 @@ class MigrationData extends Model
         if ($migration_data) {
             // Do nothing, we already have data.
         } else {
-            $migration_data = (new MigrationData());
+            $migration_data = (new MigrationData);
         }
 
         $data = array_merge($lookup_data, [
@@ -56,7 +56,7 @@ class MigrationData extends Model
         return;
     }
 
-    public static function getTypeById(Model $record)
+    public static function getItem(Model $record)
     {
         $lookup_data = [
             'model_id'   => $record->id,

@@ -85,10 +85,12 @@ class BaseMigrationJob implements ShouldQueue
 
     /**
      * Lookup the old record from mapping.
+     * 
+     * @return Model
      */
-    public function lookupRecordFromMapping(object $item, string $model_class): ?Model
+    public function lookupRecordFromMapping(object $item, string $model_class): Model
     {
-        $lookup = (new MigrationMapping())->getItem(
+        $lookup = (new MigrationMapping)->getItem(
             $this->getMappingKey($item),
             $this->table,
             $model_class
@@ -111,7 +113,7 @@ class BaseMigrationJob implements ShouldQueue
      */
     public function saveMappingData(Model $record, object $item): void
     {
-        (new MigrationMapping())->setItem(
+        (new MigrationMapping)->setItem(
             $this->getMappingKey($item),
             $this->table,
             get_class($record),
@@ -124,7 +126,7 @@ class BaseMigrationJob implements ShouldQueue
      */
     public function saveMigrationData(Model $record, object $data): void
     {
-        (new MigrationData())->setItem($record, $data);
+        (new MigrationData)->setItem($record, $data);
     }
 
     /**
