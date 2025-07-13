@@ -13,7 +13,7 @@ A Laravel package to simplify the process of running repeatable data migrations 
 
 - Laravel 11+
 - PHP 8.2+
-- If using a database queue the (jobs table)[https://laravel.com/docs/12.x/queues#driver-prerequisites] must be present. A redis queue can ignore this requirement.
+- If using a database queue the [jobs table](https://laravel.com/docs/12.x/queues#driver-prerequisites) must be present. A redis queue can ignore this requirement.
 
 ## 🚀 Installation
 
