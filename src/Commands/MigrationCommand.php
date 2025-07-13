@@ -5,9 +5,10 @@ namespace PaperleafTech\LaravelMigration\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Console\Helper\ProgressBar;
 use PaperleafTech\LaravelMigration\Jobs\MigrationJobSpawner;
@@ -19,14 +20,14 @@ class MigrationCommand extends Command
      *
      * Example for running on local:
      *
-     * php artisan migrate:run --all --sync
+     * php artisan migration:run --all
+     * php artisan migration:run TABLENAME
      *
      * @var string
      */
     protected $signature = 'migration:run 
         {table? : Migrate a single table see config/laravel-migration.php table_job_mapping}
         {--A|all : Migrate all tables}
-        {--S|sync : Migrate the data synchronously. Ignored if migrating all tables}
         {--group= : Group index (start from 0) to start the migrate all tables on}';
 
     protected $connection;
@@ -53,6 +54,8 @@ class MigrationCommand extends Command
 
     public function verifyEnvironment(): bool
     {
+        $queue = config('laravel-migration.queue_connection');
+
         // Check if the migration connection is set, and valid.
         $connection = config('database.connections.'. $this->connection);
         if (! $connection) {
@@ -60,7 +63,7 @@ class MigrationCommand extends Command
             return false;
         }
 
-        if (! Schema::hasTable('jobs') || ! Schema::hasTable('job_batches')) {
+        if ( $queue === 'database' && ! Schema::hasTable('jobs') ) {
             $this->error('The queue tables (jobs and job_batches) are not present in your database. Install them before running a migration');
             return false;
         }
@@ -95,7 +98,6 @@ class MigrationCommand extends Command
         $table = Arr::get($args, 'table', null);
         $all   = (bool) Arr::get($opts, 'all', false);
         $group = (bool) Arr::get($opts, 'group', 0);
-        $sync  = (bool) Arr::get($opts, 'sync', false);
 
         if ($table === null && $all === false) {
             $this->error('Specify a table or choose to migrate all tables.');
@@ -108,7 +110,7 @@ class MigrationCommand extends Command
 
         // Migrate a single table.
         if (! empty($table)) {
-            $this->migrateTable($table, $sync);
+            $this->migrateTable($table, sync: true);
         }
         // Migrate all tables.
         else {
@@ -154,7 +156,7 @@ class MigrationCommand extends Command
                 false,
                 $migrationItem['wheres'],
                 $migrationItem['chunk_size']
-            )->onQueue(config('laravel-migration.queue'));
+            );
 
             $jobs[]    = $spawnerJobInstance;
             $jobCount += (int) ceil(
@@ -162,13 +164,15 @@ class MigrationCommand extends Command
             );  // The number of final jobs
         }
 
-        Bus::batch($jobs)
-            ->dispatch();
+        foreach ( $jobs as $job ) {
+            dispatch($job)
+                ->onQueue(config('laravel-migration.queue'));
+        }
 
         $progressBar->start($jobCount);
         $lastQueueCount = 0;
 
-        $queueCount = DB::table('jobs')->count();
+        $queueCount = $this->getQueueCount();
 
         // Wait for the job queue to be empty before running the next batch.
         while ($queueCount !== 0) {
@@ -179,11 +183,35 @@ class MigrationCommand extends Command
             $lastQueueCount = $queueCount;
             sleep(1);
 
-            $queueCount = DB::table('jobs')->count();
+            $queueCount = $this->getQueueCount();
         }
 
         $progressBar->finish();
         $this->line("\n");
+    }
+
+    private function getQueueCount(): int
+    {
+        $queue = config('laravel-migration.queue_connection');
+        $count = 0;
+
+        switch ($queue) {
+            case 'database':
+                $count = DB::table('jobs')->count();
+                break;
+                
+            case 'redis':
+                $redis = Redis::connection();
+                $queueName = config('queue.connections.redis.queue', 'default');
+                $queueKey = "queues:$queueName";
+                $count = $redis->llen($queueKey);
+                break;
+                
+            default:
+                throw new \RuntimeException("Unsupported queue connection: {$queue}");
+        }
+
+        return $count;
     }
 
     public function migrateAllTables(int $start_group = 0): void

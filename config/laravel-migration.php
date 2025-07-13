@@ -12,6 +12,12 @@ return [
     'database_connection' => env('MIGRATION_SOURCE_CONNECTION', 'migration'),
 
     /**
+     * The queue connection to use for migration jobs. Can either be database, which 
+     * requires the jobs table, or it can be redis.
+     */
+    'queue_connection' => env('MIGRATION_QUEUE_CONNECTION', 'database'),
+
+    /**
      * The default chunk size for migration jobs. This value represents how many
      * records will be processed per job.
      */

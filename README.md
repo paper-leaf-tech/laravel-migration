@@ -9,7 +9,11 @@ A Laravel package to simplify the process of running repeatable data migrations 
 - Prevent duplicate inserts when re-running migrations.
 - Handle migration scale. From 100 rows to millions, jobs will be chunked and processed in a memory-safe way.
 
----
+## 📦 Requirements
+
+- Laravel 11+
+- PHP 8.2+
+- If using a database queue the (jobs table)[https://laravel.com/docs/12.x/queues#driver-prerequisites] must be present. A redis queue can ignore this requirement.
 
 ## 🚀 Installation
 
