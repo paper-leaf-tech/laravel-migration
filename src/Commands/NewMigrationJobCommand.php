@@ -30,6 +30,11 @@ class NewMigrationJobCommand extends Command
 
         $name             = $this->argument('name');
         $class_name       = str($name)->studly(); // Converts to StudlyCase
+        if ( str_contains($class_name, "{") ) {
+            $this->error("Invalid job name. Please provide your own class name for the job.");
+            return Command::FAILURE;
+        }
+
         $destination_path = $base_destination . '/' . $class_name . '.php';
 
         if (! file_exists($stub_path)) {
