@@ -75,7 +75,7 @@ How It Works
 
 ## ✅ Example
 
-Here's how a typical handleItem function in a migration job might look:
+Here's how a typical `handleItem` function in a migration job might look:
 
 ```php
 public function handleItem($item): void
@@ -111,6 +111,25 @@ public function handleItem($item): void
     // Save mapping data, and migration data to associate this record with the old data in case we need it in the future.
     $this->saveMappingData($record, $item);
     $this->saveMigrationData($record, $item);
+}
+
+public function getGasPeriodId($old_id) : ?int
+{
+    if ( ! $old_id ) {
+        return null;
+    }
+
+    $lookup = (new MigrationMapping)->getItem(
+        $old_id,
+        'GASPERIOD',
+        GasPeriod::class
+    );
+
+    if ( ! $lookup ) {
+        return null;
+    }
+
+    return $lookup->model_id;
 }
 ```
 
