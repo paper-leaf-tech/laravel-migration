@@ -13,8 +13,17 @@ A Laravel package to simplify the process of running repeatable data migrations 
 
 ## 🚀 Installation
 
-Install via Composer:
+Add the repository to your `composer.json` file:
+```json
+"repositories": [
+    {
+        "type": "github",
+        "url": "git@github.com:paper-leaf-tech/laravel-migration.git"
+    }
+],
+```
 
+Install via Composer:
 ```bash
 composer require paper-leaf-tech/laravel-migration
 ```
