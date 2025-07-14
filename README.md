@@ -48,19 +48,19 @@ Create a new migration job class with boilerplate code. Each job will migrate ol
 
 Update the `getItemKey()` method in this job with the primary key of the old database table. Often this is simple, but if there is no primary key (pivot table) you can provide a compound key in a string format.
 
-Update the `handleItem()` method to process the old database row into the new database. A "Mapping" table entry will be created to associate the old record with new, so that if the migration were to be run again, no duplicate data would be created.
+Update the `handleItem()` method to process a row from the source database into the laravel database. A mapping table entry will be created to associate the old record with new, so that if the migration were to be run again, no duplicate data would be created.
 
-3. run `php artisan migration:run {OldTableName} --sync`
+3. run `php artisan migration:run {OldTableName}`
 
 While developing your migration job, it is helpful to run a single migration job ignoring the job queue system. The above command will run the single job, synchronously (not as a background job).
 
 4. run `php artisan migration:run --all`
 
-This command will utilize the table_dependency_groups array to run migration jobs in a specific order. Keep in mind that you will need to run the job queue in a separate command line for jobs to be processed.
+This command will utilize values in the `table_dependency_groups` array to run migration jobs in a specific order. Keep in mind that you will need to run the job queue in a separate command line for jobs to be processed.
 
 ## 🗃 Migration Mapping Table
 
-The package uses a migration_mapping table to track which records from the old system have already been migrated.
+The package uses a migration mapping table to track which records from the old system have already been migrated.
 
 Each mapping includes:
 - *old_id* - an integer or string, the primary key of the old record
