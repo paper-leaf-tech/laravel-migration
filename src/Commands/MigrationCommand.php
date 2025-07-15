@@ -255,8 +255,8 @@ class MigrationCommand extends Command
         }
 
         if ( ! empty($this->afterJobs) ) {
-            foreach ($this->afterJobs as $job) {
-                dispatch($job)->onQueue(config('laravel-migration.queue'));
+            foreach ($this->afterJobs as $jobClass) {
+                dispatch(new $jobClass)->onQueue(config('laravel-migration.queue'));
             }
             $this->alert('After jobs dispatched.');
         }
