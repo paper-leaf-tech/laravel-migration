@@ -99,7 +99,7 @@ class MigrationCommand extends Command
 
         $table = Arr::get($args, 'table', null);
         $all   = (bool) Arr::get($opts, 'all', false);
-        $group = (bool) Arr::get($opts, 'group', 0);
+        $group = (int) Arr::get($opts, 'group', 0);
 
         if ($table === null && $all === false) {
             $this->error('Specify a table or choose to migrate all tables.');
