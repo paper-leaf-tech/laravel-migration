@@ -182,9 +182,10 @@ class MigrationCommand extends Command
         $jobCount = count($jobs);
 
         foreach ($jobs as $job) {
+            if ( ! class_exists( $job ) ) continue;
             $this->info('Running after job: '. $job);
 
-            dispatch($job)
+            dispatch(new $job)
                 ->onQueue(config('laravel-migration.queue'));
         }
 
