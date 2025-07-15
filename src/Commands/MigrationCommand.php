@@ -176,8 +176,9 @@ class MigrationCommand extends Command
         $this->line("\n");
     }
 
-    public function runAfterJobs(array $jobs, ProgressBar $progressBar)
+    public function runAfterJobs(ProgressBar $progressBar)
     {
+        $jobs     = $this->afterJobs;
         $jobCount = count($jobs);
 
         foreach ($jobs as $job) {
@@ -186,6 +187,8 @@ class MigrationCommand extends Command
             dispatch($job)
                 ->onQueue(config('laravel-migration.queue'));
         }
+
+        dd($jobCount, $jobs);
 
         $this->waitForEmptyQueue($progressBar, $jobCount);
 
@@ -255,10 +258,8 @@ class MigrationCommand extends Command
         }
 
         if ( ! empty($this->afterJobs) ) {
-            foreach ($this->afterJobs as $jobClass) {
-                dispatch(new $jobClass)->onQueue(config('laravel-migration.queue'));
-            }
-            $this->alert('After jobs dispatched.');
+            $this->alert('Dispatching after jobs');
+            $this->runAfterJobs($progressBar);
         }
 
         $this->alert('Migration completed.');
