@@ -34,6 +34,7 @@ class MigrationCommand extends Command
     protected $chunkSize;
     protected $mapping;
     protected $dependancyMapping;
+    protected $afterJobs;
 
     /**
      * The console command description.
@@ -50,6 +51,7 @@ class MigrationCommand extends Command
         $this->chunkSize         = config('laravel-migration.default_chunk_size');
         $this->mapping           = config('laravel-migration.table_job_mapping');
         $this->dependancyMapping = config('laravel-migration.table_dependency_groups');
+        $this->afterJobs         = config('laravel-migration.after_jobs', []);
     }
 
     public function verifyEnvironment(): bool
@@ -169,12 +171,36 @@ class MigrationCommand extends Command
                 ->onQueue(config('laravel-migration.queue'));
         }
 
+        $this->waitForEmptyQueue($progressBar, $jobCount);
+
+        $this->line("\n");
+    }
+
+    public function runAfterJobs(array $jobs, ProgressBar $progressBar)
+    {
+        $jobCount = count($jobs);
+
+        foreach ($jobs as $job) {
+            $this->info('Running after job: '. get_class($job));
+
+            dispatch($job)
+                ->onQueue(config('laravel-migration.queue'));
+        }
+
+        $this->waitForEmptyQueue($progressBar, $jobCount);
+
+        return;
+    }
+
+    public function waitForEmptyQueue(ProgressBar $progressBar, int $jobCount): void
+    {
         $progressBar->start($jobCount);
+
         $lastQueueCount = 0;
 
         $queueCount = $this->getQueueCount();
 
-        // Wait for the job queue to be empty before running the next batch.
+        // Wait for the job queue to be empty before running the next task.
         while ($queueCount !== 0) {
             if ($queueCount < $lastQueueCount) {
                 // Job count decrementing, can start counting completions.
@@ -187,7 +213,8 @@ class MigrationCommand extends Command
         }
 
         $progressBar->finish();
-        $this->line("\n");
+
+        return;
     }
 
     private function getQueueCount(): int
@@ -225,6 +252,13 @@ class MigrationCommand extends Command
             $this->alert("Dispatching job group " . $index);
 
             $this->migrateJobGroup($group, $progressBar);
+        }
+
+        if ( ! empty($this->afterJobs) ) {
+            foreach ($this->afterJobs as $job) {
+                dispatch($job)->onQueue(config('laravel-migration.queue'));
+            }
+            $this->alert('After jobs dispatched.');
         }
 
         $this->alert('Migration completed.');

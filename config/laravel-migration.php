@@ -60,5 +60,12 @@ return [
         // [
         //     'USER_COMPANY', // Dependant on USERS and COMPANIES
         // ]
+    ],
+
+    /**
+     * Optional jobs to run after migrating all tables has been completed.
+     */
+    'after_jobs' => [
+        // Migration/AfterJobExample::class,
     ]
 ];
