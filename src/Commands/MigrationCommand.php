@@ -90,6 +90,8 @@ class MigrationCommand extends Command
      */
     public function handle(): int
     {
+        set_time_limit(0); // Unlimited execution time
+
         if (! $this->verifyEnvironment()) {
             return Command::FAILURE;
         };
