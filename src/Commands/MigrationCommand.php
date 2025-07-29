@@ -30,6 +30,8 @@ class MigrationCommand extends Command
         {--A|all : Migrate all tables}
         {--group= : Group index (start from 0) to start the migrate all tables on}';
 
+    protected $queueName;
+    protected $queueConnection;
     protected $connection;
     protected $chunkSize;
     protected $mapping;
@@ -47,6 +49,8 @@ class MigrationCommand extends Command
     {
         parent::__construct();
 
+        $this->queueName         = config('laravel-migration.queue');
+        $this->queueConnection   = config('laravel-migration.queue_connection');
         $this->connection        = config('laravel-migration.database_connection');
         $this->chunkSize         = config('laravel-migration.default_chunk_size');
         $this->mapping           = config('laravel-migration.table_job_mapping');
@@ -56,8 +60,6 @@ class MigrationCommand extends Command
 
     public function verifyEnvironment(): bool
     {
-        $queue = config('laravel-migration.queue_connection');
-
         // Check if the migration connection is set, and valid.
         $connection = config('database.connections.'. $this->connection);
         if (! $connection) {
@@ -65,8 +67,13 @@ class MigrationCommand extends Command
             return false;
         }
 
-        if ( $queue === 'database' && ! Schema::hasTable('jobs') ) {
+        if ( $this->queueConnection === 'database' && ! Schema::hasTable('jobs') ) {
             $this->error('The queue tables (jobs and job_batches) are not present in your database. Install them before running a migration');
+            return false;
+        }
+
+        if ( $this->queueConnection ==='redis' && Redis::ping()?->getPayload() !== 'PONG' ) {
+            $this->error('Redis server is not reachable or not running.');
             return false;
         }
 
@@ -90,7 +97,8 @@ class MigrationCommand extends Command
      */
     public function handle(): int
     {
-        set_time_limit(0); // Unlimited execution time
+        // No time limit for this command.
+        set_time_limit(0);
 
         if (! $this->verifyEnvironment()) {
             return Command::FAILURE;
@@ -170,7 +178,8 @@ class MigrationCommand extends Command
 
         foreach ( $jobs as $job ) {
             dispatch($job)
-                ->onQueue(config('laravel-migration.queue'));
+                ->onConnection($this->queueConnection)
+                ->onQueue($this->queueName);
         }
 
         $this->waitForEmptyQueue($progressBar, $jobCount);
@@ -188,7 +197,8 @@ class MigrationCommand extends Command
             $this->info('Running after job: '. $job);
 
             dispatch(new $job)
-                ->onQueue(config('laravel-migration.queue'));
+                ->onConnection($this->queueConnection)
+                ->onQueue($this->queueName);
         }
 
         $this->waitForEmptyQueue($progressBar, $jobCount);
@@ -223,10 +233,9 @@ class MigrationCommand extends Command
 
     private function getQueueCount(): int
     {
-        $queue = config('laravel-migration.queue_connection');
         $count = 0;
 
-        switch ($queue) {
+        switch ($this->queueConnection) {
             case 'database':
                 $count = DB::table('jobs')->count();
                 break;
@@ -239,7 +248,7 @@ class MigrationCommand extends Command
                 break;
                 
             default:
-                throw new \RuntimeException("Unsupported queue connection: {$queue}");
+                throw new \RuntimeException("Unsupported queue connection: {$this->queueConnection}");
         }
 
         return $count;
@@ -311,8 +320,8 @@ class MigrationCommand extends Command
 
     public static function getMigrationItem(string|array $mapping, string $table): ?array
     {
-        $default_chunk_size = config('laravel-migration.default_chunk_size');
-        $migrationItem      = $mapping[$table] ?? null;
+        $chunkSize     = config('laravel-migration.default_chunk_size');
+        $migrationItem = $mapping[$table] ?? null;
 
         if (is_null($migrationItem)) {
             return null;
@@ -325,7 +334,7 @@ class MigrationCommand extends Command
             return [
                 'job'        => $migrationItem,
                 'wheres'     => [],
-                'chunk_size' => $default_chunk_size,
+                'chunk_size' => $chunkSize,
             ];
         }
 
@@ -336,7 +345,7 @@ class MigrationCommand extends Command
         return [
             'job'        => $migrationItem['job'],
             'wheres'     => $migrationItem['wheres'] ?? [],
-            'chunk_size' => $migrationItem['chunk_size'] ?? $default_chunk_size,
+            'chunk_size' => $migrationItem['chunk_size'] ?? $chunkSize,
         ];
     }
 }
