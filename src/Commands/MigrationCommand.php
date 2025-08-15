@@ -315,7 +315,11 @@ class MigrationCommand extends Command
      */
     public static function getTableNameExpression(string $table): Expression
     {
-        return new Expression(sprintf('`%s`', $table));
+        if ( strpos($table, '.') !== false ) {
+            return new Expression(sprintf('`%s`', $table));
+        }
+
+        return new Expression($table);
     }
 
     public static function getMigrationItem(string|array $mapping, string $table): ?array
