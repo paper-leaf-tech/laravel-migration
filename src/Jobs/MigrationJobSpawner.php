@@ -69,7 +69,7 @@ class MigrationJobSpawner implements ShouldQueue
 
             if (! empty($this->wheres)) {
                 foreach ($this->wheres as $where) {
-                    $count_query->whereRaw($where);
+                    $query->whereRaw($where);
                 }
             }
 
