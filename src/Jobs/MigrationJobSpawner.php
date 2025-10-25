@@ -29,9 +29,9 @@ class MigrationJobSpawner implements ShouldQueue
         protected string $conn,
         protected string $table,
         protected Expression $table_expr,
-        protected bool $sync = false,
         protected array $wheres,
-        protected int $chunk_size = 500
+        protected int $chunk_size = 500,
+        protected bool $sync = false,
     ) {
     }
 

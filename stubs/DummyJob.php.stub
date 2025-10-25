@@ -7,14 +7,27 @@ use PaperleafTech\LaravelMigration\Interfaces\MigrationJobInterface;
 
 class DummyJob extends BaseMigrationJob implements MigrationJobInterface
 {
+    /**
+     * The unique identifier for the record in the table. Usually the table's primary key.
+     * Can be a string composed of multiple columns to uniquely identify the record.
+     *
+     * @param object $item
+     * @return string
+     */
     public function getItemKey(object $item): string
     {
-        returns $item->;
+        return $item->id;
     }
 
+    /**
+     * Handle the migration job for the given item.
+     *
+     * @param object $item
+     * @return void
+     */
     public function handleItem(object $item): void
     {
-        $record = $this->lookupRecordFromMapping($item, Model::class);
+        $record = $this->lookupRecordFromMapping($item, User::class); // Provide Model class Eg. User::class
 
         // Rules to either skip or migrate record.
         // Parse data into desired format for storage in Laravel model.

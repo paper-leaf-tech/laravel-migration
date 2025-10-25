@@ -3,7 +3,7 @@
 namespace PaperleafTech\LaravelMigration\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Database\Query\Expression;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
@@ -165,9 +165,9 @@ class MigrationCommand extends Command
                 $this->connection,
                 $table,
                 self::getTableNameExpression($table),
-                false,
                 $migrationItem['wheres'],
-                $migrationItem['chunk_size']
+                $migrationItem['chunk_size'],
+                false
             );
 
             $jobs[]    = $spawnerJobInstance;
@@ -292,9 +292,9 @@ class MigrationCommand extends Command
                 $this->connection,
                 $table,
                 self::getTableNameExpression($table),
-                $sync,
                 $migrationItem['wheres'],
-                $migrationItem['chunk_size']
+                $migrationItem['chunk_size'],
+                $sync,
             ));
 
             $this->alert('Migrated table: '. $table. '.');
