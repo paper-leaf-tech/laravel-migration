@@ -3,7 +3,7 @@
 namespace PaperleafTech\LaravelMigration\Commands;
 
 use Illuminate\Console\Command;
-use Illuminate\Contracts\Database\Query\Expression;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
