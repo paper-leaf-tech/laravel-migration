@@ -172,7 +172,7 @@ class MigrationCommand extends Command
 
             $jobs[]    = $spawnerJobInstance;
             $jobCount += (int) ceil(
-                DB::connection($this->connection)->table($table)->count() / 500
+                DB::connection($this->connection)->table($table)->count() / $migrationItem['chunk_size']
             );  // The number of final jobs
         }
 
