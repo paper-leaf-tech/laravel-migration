@@ -212,6 +212,8 @@ class MigrationCommand extends Command
 
         $lastQueueCount = 0;
 
+        sleep(5); // Wait at minimum 5 seconds.
+
         $queueCount = $this->getQueueCount();
 
         // Wait for the job queue to be empty before running the next task.
