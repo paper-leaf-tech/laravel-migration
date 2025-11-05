@@ -49,20 +49,6 @@ class MigrationMapping extends Model
     }
 
     /**
-     * Determine if the database mapping record actually has a connected record in our db.
-     *
-     * @return bool
-     */
-    public function recordExists(): bool
-    {
-        if (!$this->exists) {
-            return false;
-        }
-
-        return (new $this->model_type)->newQuery()->whereKey($this->model_id)->exists();
-    }
-
-    /**
      * Access the final record in our database through the MigrationMapping record.
      *
      * @return Model

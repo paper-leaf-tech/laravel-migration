@@ -86,9 +86,9 @@ class BaseMigrationJob implements ShouldQueue
     /**
      * Lookup the old record from mapping.
      * 
-     * @return Model
+     * @return null|Model
      */
-    public function lookupRecordFromMapping(object $item, string $model_class): Model
+    public function lookupRecordFromMapping(object $item, string $model_class): ?Model
     {
         $lookup = (new MigrationMapping)->getItem(
             $this->getItemKey($item),
@@ -99,7 +99,7 @@ class BaseMigrationJob implements ShouldQueue
         $record = (new $model_class());
 
         // Check if we have a record to update
-        if ($lookup && $lookup->recordExists()) {
+        if ($lookup) {
             $record = $lookup->getRecord();
         } else {
             // New record.
