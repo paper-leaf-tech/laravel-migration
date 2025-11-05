@@ -49,7 +49,7 @@ class MigrationCommand extends Command
     {
         parent::__construct();
 
-        $this->queueName         = config('laravel-migration.queue');
+        $this->queueName         = config('laravel-migration.queue_name');
         $this->queueConnection   = config('laravel-migration.queue_connection');
         $this->connection        = config('laravel-migration.database_connection');
         $this->chunkSize         = config('laravel-migration.default_chunk_size');

@@ -82,7 +82,8 @@ class MigrationJobSpawner implements ShouldQueue
                 dispatch_sync($migration_job);
             } else {
                 dispatch($migration_job)
-                    ->onQueue(config('laravel-migration.queue'));
+                    ->onConnection(config('laravel-migration.queue_connection'))
+                    ->onQueue(config('laravel-migration.queue_name'));
                 ;
             }
         }

@@ -5,11 +5,17 @@ use App\Jobs\Migration;
 return [
 
     /*
-     * The database which data is migrated from. Create this
+     * The database connection which data is migrated from. Create this
      * connection in config/database.php under the 'connections' key.
      * By default it will use the 'migration' connection.
      */
     'database_connection' => env('MIGRATION_SOURCE_CONNECTION', 'migration'),
+
+    /**
+     * The name of the queue to place migration jobs on.
+     * Defaults to "default".
+     */
+    'queue_name' => env('MIGRATION_QUEUE_NAME', 'default'),
 
     /**
      * The queue connection to use for migration jobs. Can either be database, which 
