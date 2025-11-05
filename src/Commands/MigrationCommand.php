@@ -233,28 +233,30 @@ class MigrationCommand extends Command
         return;
     }
 
-    private function getQueueCount(): int
-    {
-        $count = 0;
+private function getQueueCount(): int
+{
+    $count = 0;
 
-        switch ($this->queueConnection) {
-            case 'database':
-                $count = DB::table('jobs')->count();
-                break;
-                
-            case 'redis':
-                $redis = Redis::connection();
-                $queueName = config('queue.connections.redis.queue', 'default');
-                $queueKey = "queues:$queueName";
-                $count = $redis->llen($queueKey);
-                break;
-                
-            default:
-                throw new \RuntimeException("Unsupported queue connection: {$this->queueConnection}");
-        }
+    switch ($this->queueConnection) {
+        case 'database':
+            $count = DB::table('jobs')->count();
+            break;
+            
+        case 'redis':
+            $redis = Redis::connection();
+            $queueName = config('laravel-migration.queue_name');
+            $queueKey = "queues:$queueName";
+            $reservedKey = "queues:$queueName:reserved";
 
-        return $count;
+            $count = $redis->llen($queueKey) + $redis->zcard($reservedKey);
+            break;
+            
+        default:
+            throw new \RuntimeException("Unsupported queue connection: {$this->queueConnection}");
     }
+
+    return $count;
+}
 
     public function migrateAllTables(int $start_group = 0): void
     {
