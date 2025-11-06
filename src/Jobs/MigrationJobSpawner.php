@@ -30,6 +30,7 @@ class MigrationJobSpawner implements ShouldQueue
         protected string $table,
         protected Expression $table_expr,
         protected array $exclude_wheres,
+        protected array $joins,
         protected int $chunk_size = 500,
         protected bool $sync = false,
     ) {
@@ -48,6 +49,12 @@ class MigrationJobSpawner implements ShouldQueue
         if (! empty($this->exclude_wheres)) {
             foreach ($this->exclude_wheres as $where) {
                 $count_query->whereRaw($where);
+            }
+        }
+
+        if (! empty($this->joins)) {
+            foreach ($this->joins as $join) {
+                $count_query->join($join['table'], $join['first'], $join['operator'], $join['second']);
             }
         }
 
@@ -70,6 +77,12 @@ class MigrationJobSpawner implements ShouldQueue
             if (! empty($this->exclude_wheres)) {
                 foreach ($this->exclude_wheres as $where) {
                     $query->whereRaw($where);
+                }
+            }
+
+            if (! empty($this->joins)) {
+                foreach ($this->joins as $join) {
+                    $query->join($join['table'], $join['first'], $join['operator'], $join['second']);
                 }
             }
 

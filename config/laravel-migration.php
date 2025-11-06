@@ -35,7 +35,7 @@ return [
      * optional exclude_wheres, and chunk_size keys.
      */
     'table_job_mapping' => [
-        // 'USERS' => Migration\UsersMigrationJob::class
+        'USERS' => Migration\UsersMigrationJob::class,
         // 'COMPANIES' => [
         //     // The job class for this migration job.
         //     'job' => Migration\CompaniesMigrationJob::class,
@@ -48,7 +48,17 @@ return [
 
         //     // Optionally provide an override chunk size if the job performs a lot of work.
         //     'chunk_size' => 500,
-        // ]
+
+        //     // Optionall provide a join conditions to query multiple tables.
+        //     'joins' => [
+        //         [
+        //             'table' => '',
+        //             'first' => '',
+        //             'operator' => '',
+        //             'second' => '',
+        //         ],
+        //     ],
+        // ],
     ],
 
     /**

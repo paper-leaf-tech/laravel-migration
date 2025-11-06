@@ -167,6 +167,7 @@ class MigrationCommand extends Command
                 $table,
                 self::getTableNameExpression($table),
                 $migrationItem['exclude_wheres'],
+                $migrationItem['joins'],
                 $migrationItem['chunk_size'],
                 false
             );
@@ -298,6 +299,7 @@ private function getQueueCount(): int
                 $table,
                 self::getTableNameExpression($table),
                 $migrationItem['exclude_wheres'],
+                $migrationItem['joins'],
                 $migrationItem['chunk_size'],
                 $sync,
             ));
@@ -343,6 +345,7 @@ private function getQueueCount(): int
             return [
                 'job'            => $migrationItem,
                 'exclude_wheres' => [],
+                'joins'          => [],
                 'chunk_size'     => $chunkSize,
             ];
         }
@@ -354,6 +357,7 @@ private function getQueueCount(): int
         return [
             'job'            => $migrationItem['job'],
             'exclude_wheres' => $migrationItem['exclude_wheres'] ?? [],
+            'joins'          => $migrationItem['joins'] ?? [],
             'chunk_size'     => $migrationItem['chunk_size'] ?? $chunkSize,
         ];
     }
