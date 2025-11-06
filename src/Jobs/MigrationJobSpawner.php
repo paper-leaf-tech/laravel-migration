@@ -45,7 +45,7 @@ class MigrationJobSpawner implements ShouldQueue
         $count_query = DB::connection($this->conn)
             ->table($this->table_expr);
 
-        if (! empty($this->wheres)) {
+        if (! empty($this->exclude_wheres)) {
             foreach ($this->exclude_wheres as $where) {
                 $count_query->whereRaw($where);
             }
@@ -67,8 +67,8 @@ class MigrationJobSpawner implements ShouldQueue
                 ->skip($offset)
                 ->take($this->chunk_size);
 
-            if (! empty($this->wheres)) {
-                foreach ($this->wheres as $where) {
+            if (! empty($this->exclude_wheres)) {
+                foreach ($this->exclude_wheres as $where) {
                     $query->whereRaw($where);
                 }
             }

@@ -166,7 +166,7 @@ class MigrationCommand extends Command
                 $this->connection,
                 $table,
                 self::getTableNameExpression($table),
-                $migrationItem['wheres'],
+                $migrationItem['exclude_wheres'],
                 $migrationItem['chunk_size'],
                 false
             );
@@ -297,7 +297,7 @@ private function getQueueCount(): int
                 $this->connection,
                 $table,
                 self::getTableNameExpression($table),
-                $migrationItem['wheres'],
+                $migrationItem['exclude_wheres'],
                 $migrationItem['chunk_size'],
                 $sync,
             ));
