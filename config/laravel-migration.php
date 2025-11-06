@@ -56,6 +56,7 @@ return [
         //             'first' => '',
         //             'operator' => '',
         //             'second' => '',
+        //             'type' => 'LEFT',
         //         ],
         //     ],
         // ],
