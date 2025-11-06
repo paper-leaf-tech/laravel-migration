@@ -139,7 +139,8 @@ class MigrationCommand extends Command
         }
 
         $telescope_paused = Cache::get('telescope:pause-recording');
-        if ($telescope_paused !== true && ! $this->confirm('Telescope is currently not paused. You can pause Telescope via the /telescope page. Continue?')) {
+        if ($telescope_paused !== true) {
+            Cache::set('telescope:pause-recording', true);
             return false;
         }
 
@@ -340,9 +341,9 @@ private function getQueueCount(): int
                 return null;
             }
             return [
-                'job'        => $migrationItem,
-                'wheres'     => [],
-                'chunk_size' => $chunkSize,
+                'job'            => $migrationItem,
+                'exclude_wheres' => [],
+                'chunk_size'     => $chunkSize,
             ];
         }
 
@@ -351,9 +352,9 @@ private function getQueueCount(): int
         }
 
         return [
-            'job'        => $migrationItem['job'],
-            'wheres'     => $migrationItem['wheres'] ?? [],
-            'chunk_size' => $migrationItem['chunk_size'] ?? $chunkSize,
+            'job'            => $migrationItem['job'],
+            'exclude_wheres' => $migrationItem['exclude_wheres'] ?? [],
+            'chunk_size'     => $migrationItem['chunk_size'] ?? $chunkSize,
         ];
     }
 }

@@ -29,7 +29,7 @@ class MigrationJobSpawner implements ShouldQueue
         protected string $conn,
         protected string $table,
         protected Expression $table_expr,
-        protected array $wheres,
+        protected array $exclude_wheres,
         protected int $chunk_size = 500,
         protected bool $sync = false,
     ) {
@@ -46,7 +46,7 @@ class MigrationJobSpawner implements ShouldQueue
             ->table($this->table_expr);
 
         if (! empty($this->wheres)) {
-            foreach ($this->wheres as $where) {
+            foreach ($this->exclude_wheres as $where) {
                 $count_query->whereRaw($where);
             }
         }

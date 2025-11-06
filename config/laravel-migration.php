@@ -42,8 +42,8 @@ return [
 
         //     // Optionally provide WHERE conditions for the source database query.
         //     'exclude_wheres' => [
-        //         'WHERE deleted = true',
-        //         'WHERE created_at < 2020-01-01',
+        //         '(`account_locked` = 0)',
+        //         '(`created_at` < 2020-01-01)',
         //     ],
 
         //     // Optionally provide an override chunk size if the job performs a lot of work.
