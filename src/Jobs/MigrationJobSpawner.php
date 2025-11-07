@@ -38,7 +38,7 @@ class MigrationJobSpawner implements ShouldQueue
 
         // Apply joins
         foreach ($this->joins as $join) {
-            $count_query->join($join['table'], $join['first'], $join['operator'], $join['second']);
+            $count_query->join($join['table'], $join['first'], $join['operator'], $join['second'], $join['type']);
         }
 
         $count = $count_query->count();
@@ -61,7 +61,7 @@ class MigrationJobSpawner implements ShouldQueue
             }
 
             foreach ($this->joins as $join) {
-                $query->join($join['table'], $join['first'], $join['operator'], $join['second']);
+                $query->join($join['table'], $join['first'], $join['operator'], $join['second'], $join['type']);
             }
 
             $migration_job = (new $this->job_class())
