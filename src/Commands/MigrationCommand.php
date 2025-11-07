@@ -8,7 +8,6 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Console\Helper\ProgressBar;
 use PaperleafTech\LaravelMigration\Jobs\MigrationJobSpawner;

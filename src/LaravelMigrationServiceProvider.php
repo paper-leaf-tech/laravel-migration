@@ -15,17 +15,12 @@ class LaravelMigrationServiceProvider extends PackageServiceProvider
         $package
             ->name('laravel-migration')
             ->hasConfigFile('laravel-migration')
-            ->hasMigrations([
-                'create_migration_data_table',
-                'create_migration_mapping_table'
-            ])
             ->hasCommands([
                 MigrationCommand::class,
                 NewMigrationJobCommand::class,
             ])
             ->hasInstallCommand(function (InstallCommand $command) {
-                $command->publishConfigFile()
-                    ->publishMigrations();
+                $command->publishConfigFile();
             });
     }
 }

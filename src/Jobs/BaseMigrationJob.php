@@ -5,12 +5,9 @@ namespace PaperleafTech\LaravelMigration\Jobs;
 use Illuminate\Bus\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
-use PaperleafTech\LaravelMigration\Models\MigrationData;
-use PaperleafTech\LaravelMigration\Models\MigrationMapping;
 
 class BaseMigrationJob implements ShouldQueue
 {
@@ -67,66 +64,11 @@ class BaseMigrationJob implements ShouldQueue
             $this->handleItem($item);
         }
     }
-
-    /**
-     * This function is implemented in child class.
-     */
-    public function getItemKey(object $item): string
-    {
-        return '';
-    }
-
     /**
      * This function is implemented in child class.
      */
     public function handleItem(object $item): void
     {
-    }
-
-    /**
-     * Lookup the old record from mapping.
-     * 
-     * @return null|Model
-     */
-    public function lookupRecordFromMapping(object $item, string $model_class): ?Model
-    {
-        $lookup = (new MigrationMapping)->getItem(
-            $this->getItemKey($item),
-            $this->table,
-            $model_class
-        );
-
-        $record = (new $model_class());
-
-        // Check if we have a record to update
-        if ($lookup) {
-            $record = $lookup->getRecord();
-        } else {
-            // New record.
-        }
-
-        return $record;
-    }
-
-    /**
-     * Save a mapping data to connect an old row and new record.
-     */
-    public function saveMappingData(Model $record, object $item): void
-    {
-        (new MigrationMapping)->setItem(
-            $this->getItemKey($item),
-            $this->table,
-            get_class($record),
-            $record->id
-        );
-    }
-
-    /**
-     * Save a migration data json for a record.
-     */
-    public function saveMigrationData(Model $record, object $data): void
-    {
-        (new MigrationData)->setItem($record, $data);
     }
 
     /**
