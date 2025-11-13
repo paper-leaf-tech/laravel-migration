@@ -212,7 +212,7 @@ class MigrationCommand extends Command
 
         $lastQueueCount = 0;
 
-        sleep(5); // Wait at minimum 5 seconds.
+        sleep(1); // Wait at minimum 1 seconds.
 
         $queueCount = $this->getQueueCount();
 
@@ -223,7 +223,7 @@ class MigrationCommand extends Command
                 $progressBar->advance(abs($queueCount - $lastQueueCount));
             }
             $lastQueueCount = $queueCount;
-            usleep(250_000); // Update every 250ms.
+            sleep(1); // Update every second
 
             $queueCount = $this->getQueueCount();
         }
