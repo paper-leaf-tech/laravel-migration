@@ -223,7 +223,7 @@ class MigrationCommand extends Command
                 $progressBar->advance(abs($queueCount - $lastQueueCount));
             }
             $lastQueueCount = $queueCount;
-            sleep(1);
+            usleep(250_000); // Update every 250ms.
 
             $queueCount = $this->getQueueCount();
         }
