@@ -150,6 +150,7 @@ class MigrationCommand extends Command
     {
         $jobs = [];
         $jobCount = 0;
+
         foreach ($group as $table) {
             $this->info('Migrating table: '. $table);
 

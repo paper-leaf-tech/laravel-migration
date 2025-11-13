@@ -27,10 +27,7 @@ class MigrationJobSpawner implements ShouldQueue
         protected array $joins,
         protected int $chunk_size = 500,
         protected bool $sync = false,
-    ) {}
-
-    public function handle(): void
-    {
+    ) {
         $count_query = DB::connection($this->conn)
             ->table($this->table_expr);
 
@@ -50,7 +47,10 @@ class MigrationJobSpawner implements ShouldQueue
         if ( $this->totalCount !== 0 ) {
             $this->jobCount = (int) ceil($this->totalCount / $this->chunk_size);
         }
+    }
 
+    public function handle(): void
+    {
         // ⚙️ Precompute aliased columns once per job
         $selectColumns = $this->getPrefixedColumns();
 
