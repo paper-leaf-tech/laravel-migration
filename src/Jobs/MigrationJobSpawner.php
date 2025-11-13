@@ -15,6 +15,9 @@ class MigrationJobSpawner implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels, Batchable;
 
+    public int $totalCount = 0;
+    public int $jobCount = 0;
+
     public function __construct(
         protected string $job_class,
         protected string $conn,
@@ -41,13 +44,17 @@ class MigrationJobSpawner implements ShouldQueue
             $count_query->join($join['table'], $join['first'], $join['operator'], $join['second'], $join['type']);
         }
 
-        $count = $count_query->count();
-        $iterations = (int) ceil($count / $this->chunk_size);
+        $this->totalCount = $count_query->count();
+        $this->jobCount   = 0;
+
+        if ( $this->totalCount !== 0 ) {
+            $this->jobCount = (int) ceil($this->totalCount / $this->chunk_size);
+        }
 
         // ⚙️ Precompute aliased columns once per job
         $selectColumns = $this->getPrefixedColumns();
 
-        for ($i = 0; $i < $iterations; $i++) {
+        for ($i = 0; $i < $this->jobCount; $i++) {
             $offset = $i * $this->chunk_size;
 
             $query = DB::connection($this->conn)
