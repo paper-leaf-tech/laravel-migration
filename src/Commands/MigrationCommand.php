@@ -71,9 +71,24 @@ class MigrationCommand extends Command
             return false;
         }
 
-        if ( $this->queueConnection ==='redis' && Redis::ping()?->getPayload() !== 'PONG' ) {
-            $this->error('Redis server is not reachable or not running.');
-            return false;
+        
+        if ( $this->queueConnection ==='redis') {
+            $ping = Redis::ping();
+            // phpredis
+            if ( $ping instanceof bool ) {
+                if ( $ping !== true ) {
+                    $this->error('Redis server is not reachable or not running.');
+                    return false;
+                }
+            }
+            // predis
+            else {
+                if ( false === class_exists(\Predis\Response\Status::class)
+                    || ($ping instanceof \Predis\Response\Status) && $ping->getPayload() !== 'PONG' ) {
+                    $this->error('Redis server is not reachable or not running.');
+                    return false;
+                }
+            }
         }
 
         // Check that mapping classes exist.
