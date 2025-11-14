@@ -32,7 +32,7 @@ return [
     /**
      * The mapping for old table names to migration job classes. You can either provide
      * a value of a single migration job or an array containing a required job key, and
-     * optional exclude_wheres, and chunk_size keys.
+     * optional wheres, joins, and chunk_size keys.
      */
     'table_job_mapping' => [
         'USERS' => Migration\UsersMigrationJob::class,
@@ -41,7 +41,7 @@ return [
         //     'job' => Migration\CompaniesMigrationJob::class,
 
         //     // Optionally provide WHERE conditions for the source database query.
-        //     'exclude_wheres' => [
+        //     'wheres' => [
         //         '(`account_locked` = 0)',
         //         '(`created_at` < 2020-01-01)',
         //     ],

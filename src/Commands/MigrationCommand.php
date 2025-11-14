@@ -166,7 +166,7 @@ class MigrationCommand extends Command
                 $this->connection,
                 $table,
                 self::getTableNameExpression($table),
-                $migrationItem['exclude_wheres'],
+                $migrationItem['wheres'],
                 $migrationItem['joins'],
                 $migrationItem['chunk_size'],
                 false
@@ -296,7 +296,7 @@ private function getQueueCount(): int
                 $this->connection,
                 $table,
                 self::getTableNameExpression($table),
-                $migrationItem['exclude_wheres'],
+                $migrationItem['wheres'],
                 $migrationItem['joins'],
                 $migrationItem['chunk_size'],
                 $sync,
@@ -341,10 +341,10 @@ private function getQueueCount(): int
                 return null;
             }
             return [
-                'job'            => $migrationItem,
-                'exclude_wheres' => [],
-                'joins'          => [],
-                'chunk_size'     => $chunkSize,
+                'job'        => $migrationItem,
+                'wheres'     => [],
+                'joins'      => [],
+                'chunk_size' => $chunkSize,
             ];
         }
 
@@ -353,10 +353,10 @@ private function getQueueCount(): int
         }
 
         return [
-            'job'            => $migrationItem['job'],
-            'exclude_wheres' => $migrationItem['exclude_wheres'] ?? [],
-            'joins'          => $migrationItem['joins'] ?? [],
-            'chunk_size'     => $migrationItem['chunk_size'] ?? $chunkSize,
+            'job'        => $migrationItem['job'],
+            'wheres'     => $migrationItem['wheres'] ?? [],
+            'joins'      => $migrationItem['joins'] ?? [],
+            'chunk_size' => $migrationItem['chunk_size'] ?? $chunkSize,
         ];
     }
 }
