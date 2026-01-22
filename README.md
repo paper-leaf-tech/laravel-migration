@@ -6,7 +6,6 @@ A Laravel package to simplify the process of running repeatable data migrations 
 
 - Create and scaffold migration jobs easily.
 - Run a migration on a single table, or all tables in one command.
-- Prevent duplicate inserts when re-running migrations.
 - Handle migration scale. From 100 rows to millions, jobs will be chunked and processed in a memory-safe way.
 
 ## 📦 Requirements
@@ -32,10 +31,9 @@ Install via Composer:
 composer require paper-leaf-tech/laravel-migration
 ```
 
-Publish the configuration and migration files, and migrate tables:
+Publish the configuration and migration files:
 ```bash
-php artisan migration:install
-php artisan migrate
+php artisan laravel-migration:install
 ```
 
 ## 🛠 Usage
@@ -46,9 +44,7 @@ php artisan migrate
 
 Create a new migration job class with boilerplate code. Each job will migrate old database data into the new laravel database table.
 
-Update the `getItemKey()` method in this job with the primary key of the old database table. Often this is simple, but if there is no primary key (pivot table) you can provide a compound key in a string format.
-
-Update the `handleItem()` method to process a row from the source database into the laravel database. A mapping table entry will be created to associate the old record with new, so that if the migration were to be run again, no duplicate data would be created.
+Update the `handleItem()` method to process a row from the source database into the laravel database.
 
 3. run `php artisan migration:run {OldTableName}`
 
@@ -58,21 +54,6 @@ While developing your migration job, it is helpful to run a single migration job
 
 This command will utilize values in the `table_dependency_groups` array to run migration jobs in a specific order. Keep in mind that you will need to run the job queue in a separate command line for jobs to be processed.
 
-## 🗃 Migration Mapping Table
-
-The package uses a migration mapping table to track which records from the old system have already been migrated.
-
-Each mapping includes:
-- *old_id* - an integer or string, the primary key of the old record
-- *old_tablename* - a string, the name of the old database table
-- *model_type* - a string, the class name of the new Laravel model
-- *model_id* - a integer, the id value of the new Laravel model
-
-How It Works
-- When a record is migrated, its original ID and table name are stored in migration_mapping, alongside the new model type and ID.
-- If the data in the original source changes and you re-run the migration, the system will update the existing record instead of inserting a duplicate.
-- This allows migrations to be idempotent — safely re-run without side effects.
-
 ## ✅ Example
 
 Here's how a typical `handleItem` function in a migration job might look:
@@ -80,56 +61,18 @@ Here's how a typical `handleItem` function in a migration job might look:
 ```php
 public function handleItem($item): void
 {
-    // Lookup or get a fresh model to store data in.
-    $record = $this->lookupRecordFromMapping($item, DailyIndex::class);
-
-    // Utilize a helper function to execute commonly used lookups
-    $oldGasPeriodId = $this->getGasPeriodId($item->UIDGASPERIOD);
-
-    // Skip migrating the record if we encounter invalid data
-    if ( ! $oldGasPeriodId ) {
-        Log::error('DailyIndexPriceJobImport. Missing gas period.', [
-            'UIDGASDAILYINDEXPRICE' => $item->UIDGASDAILYINDEXPRICE,
-            'UIDGASPERIOD'          => $item->UIDGASPERIOD,
-        ]);
-        return;
-    }
-
     // Prepare the data to be stored into the Laravel model
     $data = [
-        'gas_period_id' => $oldGasPeriodId,
-        'price_type'    => $item->PRICETYPE,
-        'price'         => (float) $item->PRICE,
-        'locked'        => true,
-        'updated_at'    => $item->EDTIME ? Carbon::parse($item->EDTIME) : now(),
+        'first_name' => $item->FNAME,
+        'last_name'  => $item->LNAME,
+        'email'      => $item->EMAIL_ADDR,
+        'updated_at' => $item->EDTIME ? Carbon::parse($item->EDTIME) : now(),
     ];
 
     // Store the data, saving quietly so that any model observers don't trigger.
+    $record = new User();
     $record->fill($data);
     $record->saveQuietly();
-
-    // Save mapping data, and migration data to associate this record with the old data in case we need it in the future.
-    $this->saveMappingData($record, $item);
-    $this->saveMigrationData($record, $item);
-}
-
-public function getGasPeriodId($old_id) : ?int
-{
-    if ( ! $old_id ) {
-        return null;
-    }
-
-    $lookup = (new MigrationMapping)->getItem(
-        $old_id,
-        'GASPERIOD',
-        GasPeriod::class
-    );
-
-    if ( ! $lookup ) {
-        return null;
-    }
-
-    return $lookup->model_id;
 }
 ```
 
@@ -140,6 +83,3 @@ Jobs are by default chunked to process 500 rows of data per job. If the job perf
 
 #### Property not fillable
 The current structure requires that the model allows mass assignment of properties. You can add `protected $guarded = [];` to your model to allow all properties to be mass assigned.
-
-#### Source table has no Primary Key
-This can arise when migrating pivot tables. You can use a compound key, such as a string utilizing values from multiple different columns which will then represent a unique value.
