@@ -155,7 +155,7 @@ class MigrationCommand extends Command
         $telescope_paused = Cache::get('telescope:pause-recording');
         if ($telescope_paused !== true) {
             Cache::set('telescope:pause-recording', true);
-            return false;
+            $this->warn('Telescope recording has been paused to avoid logging migration queries.');
         }
 
         return true;
