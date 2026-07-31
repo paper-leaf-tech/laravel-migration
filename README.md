@@ -76,6 +76,24 @@ public function handleItem($item): void
 }
 ```
 
+## 🧩 How chunking works
+
+Each source table is split into chunk jobs by **primary key range** (keyset chunking) rather than by `LIMIT`/`OFFSET`. Every chunk query carries an explicit `ORDER BY`, so a source row lands in exactly one chunk — no duplicates, no silent omissions — and the migration avoids the `OFFSET` scan that makes deep chunks progressively slower.
+
+Keyset chunking engages when both hold:
+
+- The source table has a **single-column integer primary key**. Boundary values are inlined into the chunk SQL rather than bound, so the integer restriction is what makes the query safe to build.
+- The engine supports window functions — **MySQL 8.0+ or MariaDB 10.2+**. All other drivers Laravel supports qualify.
+
+Otherwise the package falls back to offset chunking with an `ORDER BY` over the primary key, which is still deterministic. A table with **no primary key at all** has nothing stable to order by, so it keeps the old unordered behaviour and logs a warning naming the table. If you migrate such a table, add a primary key to the source or accept that rows may be processed twice or skipped.
+
+Two things worth knowing:
+
+- **Counts are in distinct keys.** When keyset chunking is active, the chunk size and the progress bar count distinct primary keys, not joined rows. A one-to-many join can therefore produce a chunk carrying more rows than `chunk_size`. This is deliberate: aligning boundaries to keys is what prevents a key from straddling two chunks.
+- **Identifier quoting is MySQL/MariaDB specific.** Key columns are qualified with backticks, matching the existing handling of table names that contain a dot.
+
+Chunk composition differs from versions before `1.1.0`. Upgrade between full migration runs, not partway through one.
+
 ## ⁉️ Common Issues
 
 #### Running out of memory
