@@ -5,6 +5,7 @@ namespace PaperleafTech\LaravelMigration\Jobs;
 use Illuminate\Bus\Queueable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\LazyCollection;
+use PaperleafTech\LaravelMigration\Support\BulkWriter;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -33,6 +34,11 @@ class BaseMigrationJob implements ShouldQueue
      */
     protected string $table;
 
+    /**
+     * Buffered destination writes for this chunk.
+     */
+    protected ?BulkWriter $writer = null;
+
     public function setQuery(string $query): static
     {
         $this->query = $query;
@@ -59,22 +65,37 @@ class BaseMigrationJob implements ShouldQueue
     public function handle(): void
     {
         $this->handleChunk($this->fetchChunk());
+
+        // Anything a job buffered but did not flush itself. Levels whose ids
+        // are needed downstream have to be flushed explicitly mid-chunk; this
+        // covers the leaf writes that nothing references.
+        $this->writer()->flush();
+    }
+
+    /**
+     * The buffered bulk writer for this chunk.
+     *
+     * Shared for the life of the job so that logic split across traits can
+     * buffer into one place, and flushed when the chunk finishes.
+     */
+    protected function writer(): BulkWriter
+    {
+        return $this->writer ??= new BulkWriter;
     }
 
     /**
      * Handle every row in this chunk.
      *
      * Override this instead of handleItem() when the destination writes can be
-     * batched — one upsert of 500 rows rather than 500 saves is typically the
+     * batched — one insert of 500 rows rather than 500 saves is typically the
      * largest single speed-up available to a migration job:
      *
      *     public function handleChunk(iterable $items): void
      *     {
-     *         User::upsert(
-     *             collect($items)->map($this->toRow(...))->all(),
-     *             ['legacy_id'],
-     *         );
+     *         $this->writer()->insert('users', collect($items)->map($this->toRow(...))->all());
      *     }
+     *
+     * See BulkWriter for writing a parent level and then its children.
      *
      * @param  iterable<object>  $items
      */

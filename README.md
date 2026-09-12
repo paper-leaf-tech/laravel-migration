@@ -151,6 +151,65 @@ public function handleChunk(iterable $items): void
 
 Rows are streamed from the source, so a job that only implements `handleItem()` never holds the whole chunk in memory. Collecting the chunk, as above, opts into holding it.
 
+### Bulk inserts across a relationship
+
+The usual reason a migration job writes one row at a time is that it needs the
+new record's id for its children. `$this->writer()` removes that constraint.
+
+You don't need the parent's id when you *decide* a child row, only when you
+*write* it — so plan the whole level in memory, write it in one statement, and
+read the new ids back keyed by the legacy id the source row already carries:
+
+```php
+public function handleChunk(iterable $items): void
+{
+    $items = collect($items);
+
+    // One statement, then one read-back: [legacy customer id => new user id].
+    $userIds = $this->writer()->insertAndMap(
+        'users',
+        $items->map($this->toUser(...))->all(),
+        'mig_customer_id',
+    );
+
+    // Children are planned against the legacy key and resolved through the map.
+    $this->writer()->insert('registrants', $items->map(fn ($item) => [
+        'user_id'    => $userIds[$item->C_ID],
+        'first_name' => $item->C_FNAME,
+    ])->all());
+}
+```
+
+Two levels cost four queries per chunk instead of several per row. Deeper
+relationships repeat the pattern — `insertAndMap()` the level, then build the
+next one against the map it returns.
+
+Logic split across traits can buffer into the shared writer instead and let the
+chunk flush it:
+
+```php
+$this->writer()->add('login_history', [...]);   // called per row, from a trait
+```
+
+Buffered tables are written when the chunk finishes, in the order they were
+first used. A level whose ids are needed downstream still has to be flushed
+explicitly with `insertAndMap()` — the buffer is for leaf writes that nothing
+references.
+
+| Method | |
+| --- | --- |
+| `insert($table, $rows)` | Write rows now, split across as few statements as the placeholder limit allows. |
+| `insertAndMap($table, $rows, $key)` | Write rows, then return `[legacy id => new id]`. |
+| `idMap($table, $key, $values)` | Read back ids for legacy keys already written. |
+| `add($table, $row)` / `addMany($table, $rows)` | Buffer for the end of the chunk. |
+| `flush($table = null)` | Write one buffered table, or all of them. |
+
+The writer is **insert-only**. It assumes each run starts from a fresh
+destination, which is what makes a legacy id enough to identify a row. It also
+gives every row in a batch the same columns — Laravel's `insert()` takes its
+column list from the first row, so a row with different keys otherwise lands in
+the wrong columns silently.
+
 ## 🧩 How chunking works
 
 Each source table is split into chunk jobs by **primary key range** (keyset chunking) rather than by `LIMIT`/`OFFSET`. Every chunk query carries an explicit `ORDER BY`, so a source row lands in exactly one chunk — no duplicates, no silent omissions — and the migration avoids the `OFFSET` scan that makes deep chunks progressively slower.

@@ -2,8 +2,11 @@
 
 All notable changes to `laravel-migration` will be documented in this file
 
-## 2.0.1
+## 2.1.0
 
+- Added `BulkWriter` and `BaseMigrationJob::writer()`, for migration jobs that write a parent row so they can use its new id for child rows. `insertAndMap()` writes a level in one statement and returns `[legacy id => new id]`, so the next level can be planned in memory and written in one statement too. `add()`/`addMany()` buffer into a shared writer that the chunk flushes when it finishes, so logic split across traits does not each write its own rows.
+- `BulkWriter` gives every row in a batch the same columns. Laravel's `insert()` takes its column list from the first row and sorts each row's values by key, so a row with a different key set lands in the wrong columns without raising anything; a missing value is now an explicit null.
+- Batches are split to stay under MySQL's 65,535 bound-parameter ceiling, and id read-backs are split into `IN ()` lists of 5,000.
 - Dropped elapsed time, the estimated-time reading and the memory reading from the queue progress bar. The times rendered as `< 1 ms` with ragged padding and told you nothing useful — progress here is driven by queue depth, which moves in bursts as workers pick chunks up, so a linear extrapolation is noise. The memory figure was the command process's own, not the workers' doing the migrating. The bar now reads `1204/2409 jobs [=====>----] 49%`.
 - The progress bar is redrawn after each poll rather than before it, so the figure shown is the depth just observed instead of the previous round's.
 

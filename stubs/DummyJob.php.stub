@@ -37,8 +37,11 @@ class DummyJob extends BaseMigrationJob implements MigrationJobInterface
      * Handle the whole chunk at once.
      *
      * Override this instead of handleItem() when the destination writes can be
-     * batched. One upsert of 500 rows instead of 500 individual saves is
+     * batched. One insert of 500 rows instead of 500 individual saves is
      * usually the single largest speed-up available to a migration job.
+     *
+     * insertAndMap() returns the new ids keyed by the legacy id, so a child
+     * level can be built in memory and written in one statement too.
      *
      * @param iterable<object> $items
      * @return void
@@ -50,6 +53,13 @@ class DummyJob extends BaseMigrationJob implements MigrationJobInterface
     //         // ...
     //     ])->all();
     //
-    //     \App\Models\DummyModel::upsert($rows, ['legacy_id']);
+    //     $ids = $this->writer()->insertAndMap('dummy_models', $rows, 'legacy_id');
+    //
+    //     $this->writer()->insert('dummy_model_lines', collect($items)->map(
+    //         fn (object $item): array => [
+    //             'dummy_model_id' => $ids[$item->D_ID],
+    //             // ...
+    //         ]
+    //     )->all());
     // }
 }
