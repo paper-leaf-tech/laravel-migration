@@ -42,6 +42,16 @@ class BulkWriter
     protected const MAX_KEYS_PER_LOOKUP = 5000;
 
     /**
+     * Byte budget for one statement's values. The placeholder ceiling alone
+     * does not bound payload: a few hundred rows carrying a large text column
+     * can exceed max_allowed_packet, which defaults to 16MB on some servers
+     * and fails the whole statement. Deliberately well under that, and it only
+     * binds on rows carrying large values — ordinary rows hit the placeholder
+     * ceiling first.
+     */
+    protected const MAX_STATEMENT_BYTES = 4194304;
+
+    /**
      * Buffered rows, keyed by table. PHP preserves insertion order, which is
      * the order flush() writes the tables in.
      *
@@ -130,13 +140,65 @@ class BulkWriter
             return 0;
         }
 
-        $perStatement = max(1, intdiv(self::MAX_PLACEHOLDERS, count($rows[0])));
-
-        foreach (array_chunk($rows, $perStatement) as $batch) {
+        foreach ($this->batches($rows) as $batch) {
             $this->connection()->table($table)->insert($batch);
         }
 
         return count($rows);
+    }
+
+    /**
+     * Split rows into statements that stay under both the placeholder ceiling
+     * and the byte budget.
+     *
+     * A row wider than the budget on its own still goes out alone rather than
+     * being dropped; nothing here can make an oversized single row fit.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     * @return \Generator<int, array<int, array<string, mixed>>>
+     */
+    protected function batches(array $rows): \Generator
+    {
+        $perStatement = max(1, intdiv(self::MAX_PLACEHOLDERS, count($rows[0])));
+
+        $batch = [];
+        $bytes = 0;
+
+        foreach ($rows as $row) {
+            $rowBytes = $this->sizeOf($row);
+
+            if ($batch !== [] && (count($batch) >= $perStatement || $bytes + $rowBytes > self::MAX_STATEMENT_BYTES)) {
+                yield $batch;
+
+                $batch = [];
+                $bytes = 0;
+            }
+
+            $batch[] = $row;
+            $bytes += $rowBytes;
+        }
+
+        if ($batch !== []) {
+            yield $batch;
+        }
+    }
+
+    /**
+     * Roughly how many bytes a row contributes to a statement. Only string
+     * lengths matter at this scale; everything else is counted as a small
+     * fixed cost.
+     *
+     * @param  array<string, mixed>  $row
+     */
+    protected function sizeOf(array $row): int
+    {
+        $bytes = 0;
+
+        foreach ($row as $value) {
+            $bytes += is_string($value) ? strlen($value) + 3 : 8;
+        }
+
+        return $bytes;
     }
 
     /**

@@ -2,6 +2,24 @@
 
 All notable changes to `laravel-migration` will be documented in this file
 
+## 2.2.0
+
+### Performance
+
+- The chunk boundary query no longer applies `DISTINCT` when the table has no joins. Only a join can repeat the key, so an unjoined table was paying for a dedup pass over a column that is unique by definition. Measured against a real 941k-row MariaDB table: 0.431s to 0.350s, and one fewer derived table in the plan.
+- `BulkWriter` now caps a statement by payload size as well as placeholder count. The placeholder ceiling alone does not bound bytes: a few hundred rows carrying a large text column could exceed `max_allowed_packet`, which defaults to 16MB on some servers, and fail the whole statement.
+
+### Experience
+
+- A `--sync` run now shows progress. It never reaches a queue, so nothing could be counted from the outside and the command sat silent for the length of the run; chunks now report completion as they finish.
+- Dependency group banners are no longer drawn as rows of asterisks. Groups and per-table counts use the standard Laravel console components, and per-table counts are pluralised (`1 job`, not `1 jobs`).
+- A run ends with what actually moved — rows, tables, jobs and elapsed time — instead of just "Migration completed."
+- A dry run no longer prints group dispatch headers, which claimed to be dispatching work it was not.
+
+### Fixed
+
+- Per-run state (the dry-run plan, the start time) is reset when the command runs. Artisan resolves a command once and reuses it, so a second `Artisan::call('migration:run')` in the same process reported doubled totals.
+
 ## 2.1.1
 
 - The agent skill no longer tells developers to give migrations a dedicated queue. The wait counting delayed and reserved jobs is real but conditional, and on a development machine the default queue is usually idle — so it now describes the mechanism and the symptom, and offers `MIGRATION_QUEUE_NAME` as a remedy if a run actually stalls.

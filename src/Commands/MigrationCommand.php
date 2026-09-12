@@ -5,6 +5,7 @@ namespace PaperleafTech\LaravelMigration\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Facades\DB;
@@ -63,6 +64,11 @@ class MigrationCommand extends Command
      * @var array<int, array{0: string, 1: int, 2: int}>
      */
     protected array $plan = [];
+
+    /**
+     * When the run started, for the closing summary.
+     */
+    protected ?float $startedAt = null;
 
     /**
      * The console command description.
@@ -173,6 +179,10 @@ class MigrationCommand extends Command
             return Command::FAILURE;
         };
 
+        // Artisan resolves a command once and reuses it, so per-run state has
+        // to be cleared rather than assumed fresh.
+        $this->plan             = [];
+        $this->startedAt        = microtime(true);
         $this->runSynchronously = (bool) $this->option('sync');
         $this->skipWaiting      = (bool) $this->option('no-wait');
         $this->dryRun           = (bool) $this->option('dry-run');
@@ -279,32 +289,83 @@ class MigrationCommand extends Command
         // released spawner re-dispatches chunks it already dispatched.
         foreach ($jobs as $table => $job) {
             $this->plan[] = [$table, $job->totalCount, $job->jobCount];
-
-            if ($this->dryRun) {
-                continue;
-            }
-
-            $this->info(sprintf(
-                'Migrating table: %s (%s rows, %s jobs)',
-                $table,
-                number_format($job->totalCount),
-                number_format($job->jobCount)
-            ));
-
-            $job->handle();
         }
 
         if ($this->dryRun) {
             return $succeeded;
         }
 
-        if ($this->shouldWait()) {
-            $succeeded = $this->awaitQueue($progressBar, $jobCount) && $succeeded;
+        foreach ($jobs as $table => $job) {
+            $this->components->twoColumnDetail(
+                $table,
+                sprintf(
+                    '%s %s, %s',
+                    number_format($job->totalCount),
+                    Str::plural('row', $job->totalCount),
+                    $this->pluralise($job->jobCount, 'job')
+                )
+            );
         }
 
-        $this->line("\n");
+        // A synchronous run never reaches a queue, so nothing can be counted
+        // from the outside. Advance as each chunk finishes instead.
+        $bar = $this->runSynchronously && $jobCount > 0
+            ? $this->startProgressBar($jobCount)
+            : null;
+
+        foreach ($jobs as $job) {
+            $job->handle($bar === null ? null : fn () => $bar->advance());
+        }
+
+        if ($bar !== null) {
+            $bar->finish();
+            $this->newLine(2);
+        }
+
+        if ($this->shouldWait()) {
+            $succeeded = $this->awaitQueue($progressBar, $jobCount) && $succeeded;
+            $this->newLine(2);
+        }
 
         return $succeeded;
+    }
+
+    /**
+     * A progress bar in the same shape the queue wait uses.
+     */
+    protected function startProgressBar(int $jobCount): ProgressBar
+    {
+        $bar = $this->output->createProgressBar($jobCount);
+        $bar->setFormat('  %current%/%max% jobs [%bar%] %percent:3s%%');
+        $bar->start();
+
+        return $bar;
+    }
+
+    /**
+     * How long the run has taken, in units a person reads at a glance.
+     */
+    protected function elapsed(): string
+    {
+        $seconds = microtime(true) - (float) $this->startedAt;
+
+        if ($seconds < 60) {
+            return sprintf('%.1fs', $seconds);
+        }
+
+        if ($seconds < 3600) {
+            return sprintf('%dm %ds', intdiv((int) $seconds, 60), (int) $seconds % 60);
+        }
+
+        return sprintf('%dh %dm', intdiv((int) $seconds, 3600), intdiv((int) $seconds % 3600, 60));
+    }
+
+    /**
+     * "1 job", "5 jobs".
+     */
+    protected function pluralise(int $count, string $noun): string
+    {
+        return number_format($count).' '.Str::plural($noun, $count);
     }
 
     /**
@@ -519,7 +580,9 @@ class MigrationCommand extends Command
                 continue; // Skip groups until we reach the current group.
             }
 
-            $this->alert("Dispatching job group " . $index);
+            if (! $this->dryRun) {
+                $this->components->info('Group '.$index);
+            }
 
             $succeeded = $this->migrateJobGroup($group, $progressBar) && $succeeded;
         }
@@ -531,13 +594,31 @@ class MigrationCommand extends Command
         }
 
         if ( ! empty($this->afterJobs) ) {
-            $this->alert('Dispatching after jobs');
+            $this->components->info('After jobs');
             $this->runAfterJobs($progressBar);
         }
 
-        $this->alert('Migration completed.');
+        $this->reportSummary();
 
         return $succeeded;
+    }
+
+    /**
+     * What actually moved, and how long it took. A migration runs for long
+     * enough that "it finished" on its own is not a useful closing line.
+     */
+    protected function reportSummary(): void
+    {
+        $rows = array_sum(array_column($this->plan, 1));
+        $jobs = array_sum(array_column($this->plan, 2));
+
+        $this->components->info(sprintf(
+            'Migrated %s from %s in %s%s',
+            $this->pluralise($rows, 'row'),
+            $this->pluralise(count($this->plan), 'table'),
+            $this->pluralise($jobs, 'job'),
+            $this->startedAt === null ? '' : sprintf(' — %s', $this->elapsed())
+        ));
     }
 
     /**
@@ -618,17 +699,33 @@ class MigrationCommand extends Command
         }
 
         if ($sync) {
-            $this->info('Migrating table: '. $table);
-
             $spawner = $this->makeSpawner($migrationItem, $table, sync: true);
 
             if ($spawner === null) {
                 return false;
             }
 
-            dispatch_sync($spawner);
+            $this->components->twoColumnDetail(
+                $table,
+                sprintf(
+                    '%s %s, %s',
+                    number_format($spawner->totalCount),
+                    Str::plural('row', $spawner->totalCount),
+                    $this->pluralise($spawner->jobCount, 'job')
+                )
+            );
 
-            $this->alert('Migrated table: '. $table. '.');
+            $bar = $spawner->jobCount > 0 ? $this->startProgressBar($spawner->jobCount) : null;
+
+            $spawner->handle($bar === null ? null : fn () => $bar->advance());
+
+            if ($bar !== null) {
+                $bar->finish();
+                $this->newLine(2);
+            }
+
+            $this->plan[] = [$table, $spawner->totalCount, $spawner->jobCount];
+            $this->reportSummary();
 
             return true;
         }
@@ -638,7 +735,7 @@ class MigrationCommand extends Command
 
         $succeeded = $this->migrateJobGroup($group, $progressBar);
 
-        $this->alert('Migrated table: '. $table. '.');
+        $this->reportSummary();
 
         return $succeeded;
     }

@@ -96,7 +96,13 @@ class MigrationJobSpawner implements ShouldQueue
         $this->jobCount = count($this->boundaries);
     }
 
-    public function handle(): void
+    /**
+     * @param  \Closure|null  $onChunk  Called after each chunk is dispatched or,
+     *                                  in sync mode, after it has run. Lets the
+     *                                  command report progress for work that
+     *                                  never reaches a queue to be counted.
+     */
+    public function handle(?\Closure $onChunk = null): void
     {
         // ⚙️ Precompute aliased columns once per job
         $selectColumns = $this->getPrefixedColumns();
@@ -104,7 +110,8 @@ class MigrationJobSpawner implements ShouldQueue
         $this->dispatchChunks(
             $this->keyColumn === null
                 ? $this->offsetChunkQueries($selectColumns)
-                : $this->keysetChunkQueries($selectColumns)
+                : $this->keysetChunkQueries($selectColumns),
+            $onChunk
         );
     }
 
@@ -186,7 +193,7 @@ class MigrationJobSpawner implements ShouldQueue
      *
      * @param  iterable<Builder>  $queries
      */
-    protected function dispatchChunks(iterable $queries): void
+    protected function dispatchChunks(iterable $queries, ?\Closure $onChunk = null): void
     {
         $pending = [];
 
@@ -199,41 +206,56 @@ class MigrationJobSpawner implements ShouldQueue
             if ($this->sync) {
                 dispatch_sync($migration_job);
 
+                if ($onChunk !== null) {
+                    $onChunk();
+                }
+
                 continue;
             }
 
             $pending[] = $migration_job;
 
             if (count($pending) >= self::DISPATCH_BATCH_SIZE) {
-                $this->pushChunks($pending);
+                $this->pushChunks($pending, $onChunk);
                 $pending = [];
             }
         }
 
         if ($pending !== []) {
-            $this->pushChunks($pending);
+            $this->pushChunks($pending, $onChunk);
         }
     }
 
     /**
      * @param  array<int, object>  $jobs
      */
-    protected function pushChunks(array $jobs): void
+    protected function pushChunks(array $jobs, ?\Closure $onChunk = null): void
     {
         Queue::connection(config('laravel-migration.queue_connection'))
             ->bulk($jobs, '', config('laravel-migration.queue_name'));
+
+        if ($onChunk === null) {
+            return;
+        }
+
+        foreach ($jobs as $ignored) {
+            $onChunk();
+        }
     }
 
     /**
      * Compute the keyset chunk boundaries in a single indexed pass over the
      * key column.
      *
-     * The innermost query selects DISTINCT keys rather than joined rows. A one
-     * to many join fans out rows, and numbering the joined rows would let a
-     * boundary land mid key, so both adjacent range chunks would match that
-     * key. Numbering distinct keys makes every boundary key aligned, and each
-     * source key therefore falls in exactly one chunk. The trade off is that a
-     * fanning join can produce a chunk carrying more than chunk_size rows.
+     * When the table is joined, the innermost query selects DISTINCT keys
+     * rather than joined rows. A one to many join fans out rows, and numbering
+     * the joined rows would let a boundary land mid key, so both adjacent
+     * range chunks would match that key. Numbering distinct keys makes every
+     * boundary key aligned, and each source key therefore falls in exactly one
+     * chunk. The trade off is that a fanning join can produce a chunk carrying
+     * more than chunk_size rows.
+     *
+     * An unjoined table cannot repeat its key, so it skips the dedup pass.
      *
      * The same pass also reports the total number of distinct keys via
      * COUNT(*) OVER (), so totalCount costs nothing beyond this query.
@@ -247,12 +269,17 @@ class MigrationJobSpawner implements ShouldQueue
     {
         $qualifiedKey = $this->qualifyKeyColumn($this->keyColumn);
 
-        $distinctKeys = DB::connection($this->conn)
+        $keys = DB::connection($this->conn)
             ->table($this->table_expr)
-            ->distinct()
             ->select(new Expression($qualifiedKey.' as chunk_key'));
 
-        $this->applyConstraints($distinctKeys);
+        // Only a join can repeat the key. Without one the key column is unique
+        // by definition, and DISTINCT just adds a dedup pass over it.
+        if ($this->joins !== []) {
+            $keys->distinct();
+        }
+
+        $this->applyConstraints($keys);
 
         // Two nested subqueries rather than GROUP BY plus a window in one
         // level, which avoids any question about window versus group by
@@ -262,9 +289,9 @@ class MigrationJobSpawner implements ShouldQueue
                 .'select chunk_key,'
                 .' row_number() over (order by chunk_key) as row_num,'
                 .' count(*) over () as total_keys'
-                .' from (%s) as distinct_keys'
+                .' from (%s) as source_keys'
             .') as ordered_keys where (row_num - 1) %% %d = 0 order by row_num',
-            $distinctKeys->toSql(),
+            $keys->toSql(),
             $this->chunk_size
         );
 

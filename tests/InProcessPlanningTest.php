@@ -2,6 +2,7 @@
 
 namespace PaperleafTech\LaravelMigration\Tests;
 
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PaperleafTech\LaravelMigration\Jobs\MigrationJobSpawner;
@@ -55,10 +56,13 @@ class InProcessPlanningTest extends TestCase
         }
     }
 
-    public function test_the_command_reports_the_row_and_job_counts_before_dispatching(): void
+    public function test_the_command_reports_the_row_and_job_counts_per_table(): void
     {
-        $this->artisan('migration:run', ['--all' => true, '--no-wait' => true])
-            ->expectsOutputToContain('USERS (500 rows, 5 jobs)')
-            ->assertExitCode(0);
+        $this->assertSame(0, Artisan::call('migration:run', ['--all' => true, '--no-wait' => true]));
+
+        $this->assertMatchesRegularExpression(
+            '/USERS [. ]+500 rows, 5 jobs/',
+            Artisan::output()
+        );
     }
 }

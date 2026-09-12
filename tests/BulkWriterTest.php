@@ -76,6 +76,34 @@ class BulkWriterTest extends TestCase
         $this->assertSame(25000, DB::connection('testing')->table('users')->count());
     }
 
+    public function test_batches_are_split_by_payload_size_as_well_as_placeholder_count(): void
+    {
+        // Two columns, so the placeholder ceiling alone would allow tens of
+        // thousands of rows in one statement. 200 rows of 100KB is 20MB of
+        // payload, past what a server's max_allowed_packet may accept.
+        $rows = [];
+        for ($i = 1; $i <= 200; $i++) {
+            $rows[] = ['name' => str_repeat('x', 100000), 'mig_customer_id' => $i];
+        }
+
+        DB::connection('testing')->flushQueryLog();
+        DB::connection('testing')->enableQueryLog();
+
+        $this->writer()->insert('users', $rows);
+
+        $this->assertGreaterThan(1, $this->insertCount(), 'A 20MB batch must not go out as one statement.');
+        $this->assertSame(200, DB::connection('testing')->table('users')->count());
+    }
+
+    public function test_a_single_oversized_row_is_still_written(): void
+    {
+        $this->writer()->insert('users', [
+            ['name' => str_repeat('x', 200000), 'mig_customer_id' => 1],
+        ]);
+
+        $this->assertSame(1, DB::connection('testing')->table('users')->count());
+    }
+
     public function test_an_id_map_is_read_back_in_one_query(): void
     {
         $this->writer()->insert('users', [
