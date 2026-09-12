@@ -2,6 +2,10 @@
 
 All notable changes to `laravel-migration` will be documented in this file
 
+## 2.1.1
+
+- The agent skill no longer tells developers to give migrations a dedicated queue. The wait counting delayed and reserved jobs is real but conditional, and on a development machine the default queue is usually idle — so it now describes the mechanism and the symptom, and offers `MIGRATION_QUEUE_NAME` as a remedy if a run actually stalls.
+
 ## 2.1.0
 
 - Added an agent skill at `resources/boost/skills/writing-migration-jobs/`, covering column projection, `handleChunk()` over `handleItem()`, the plan/insert/resolve pattern, and the anti-patterns that make a migration slow. Laravel Boost discovers it automatically in any application requiring this package directly; other setups can point an agent at the file. A test pins its location and checks that every writer method it documents still exists.
@@ -23,7 +27,7 @@ the package's classes directly or run it unattended.
 - **`MigrationCommand::waitForEmptyQueue()` is now `awaitQueue()`** and returns `bool` (whether the queue drained without failures) instead of `void`.
 - **`migrateTable()`, `migrateJobGroup()` and `migrateAllTables()` return `bool`** instead of `void`, reporting whether the work succeeded.
 - **`migration:run` exits non-zero** when a table is unmapped, its job class is missing, a configured column does not exist, or any job failed while the run was waiting. It previously printed the error and exited `0`.
-- **The queue-wait loop is scoped to the configured queue name** and, on Redis, also counts the `:delayed` set. If your migration queue is shared with the rest of the application, a delayed or released job on that queue will now hold the run until it clears. Give migrations their own queue (`MIGRATION_QUEUE_NAME`) to avoid this.
+- **The queue-wait loop is scoped to the configured queue name** and, on Redis, also counts the `:delayed` set. If the migration queue is shared with the rest of the application, a delayed or released job on that queue will now hold the run until it clears. `MIGRATION_QUEUE_NAME` gives the migration a queue of its own if that becomes a problem.
 - **A `queue_connection` other than `database` or `redis` is rejected** during environment verification rather than throwing partway through a run.
 - **Chunk jobs are pushed with the queue driver's bulk API**, which bypasses the Bus dispatcher. Job middleware, `ShouldBeUnique` and `after_commit` do not apply to chunk jobs.
 - **Laravel 11 is the minimum.** The package uses the Laravel 11 schema inspection API (`getIndexes()` / `getColumns()`); on Laravel 10 those throw, get swallowed, and the package silently degrades to unordered chunking.

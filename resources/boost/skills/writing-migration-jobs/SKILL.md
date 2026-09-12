@@ -167,9 +167,11 @@ worker must be running unless you pass `--sync` or `--no-wait`. Failures are
 reported from `failed_jobs` and make the command exit non-zero; inspect them
 with `php artisan queue:failed`.
 
-Give migrations their own queue (`MIGRATION_QUEUE_NAME`) rather than sharing
-`default`. The wait loop counts everything on the queue it is told to watch,
-including delayed and reserved jobs from the rest of the application.
+The wait counts everything on the queue named by `queue_name`, delayed and
+reserved jobs included. On a development machine the default queue is usually
+idle and this never comes up. If a run does sit at a steady count with no
+migration work left, something else is on that queue — wait it out, or set
+`MIGRATION_QUEUE_NAME` to give the migration a queue of its own.
 
 Lower `chunk_size` for jobs that do a lot of work per row; raise it for jobs
 that batch their writes.
