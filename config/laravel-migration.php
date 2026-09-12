@@ -1,7 +1,5 @@
 <?php
 
-use App\Jobs\Migration;
-
 return [
 
     /*
@@ -35,26 +33,42 @@ return [
      * optional wheres, joins, and chunk_size keys.
      */
     'table_job_mapping' => [
-        'USERS' => Migration\UsersMigrationJob::class,
+        // 'USERS' => \App\Jobs\Migration\UsersMigrationJob::class,
+
         // 'COMPANIES' => [
         //     // The job class for this migration job.
-        //     'job' => Migration\CompaniesMigrationJob::class,
+        //     'job' => \App\Jobs\Migration\CompaniesMigrationJob::class,
 
         //     // Optionally provide WHERE conditions for the source database query.
+        //     // These are applied verbatim, so quote literals as the source engine expects.
         //     'wheres' => [
         //         '(`account_locked` = 0)',
-        //         '(`created_at` < 2020-01-01)',
+        //         "(`created_at` < '2020-01-01')",
         //     ],
 
         //     // Optionally provide an override chunk size if the job performs a lot of work.
         //     'chunk_size' => 500,
 
-        //     // Optionall provide a join conditions to query multiple tables.
+        //     // Optionally restrict which columns the chunk queries select.
+        //     // Without this every column of every table involved is read
+        //     // from the source and carried in each job's queue payload,
+        //     // which is wasteful on wide legacy tables. The base table's
+        //     // primary key is always included. Qualify a name with its table
+        //     // when a join would make it ambiguous.
+        //     'columns' => [
+        //         'NAME',
+        //         'ACCOUNT_STATUS',
+        //         'USERS.EMAIL_ADDR',
+        //     ],
+
+        //     // Optionally provide join conditions to query multiple tables.
+        //     // Only 'table', 'first' and 'second' are required; 'operator'
+        //     // defaults to '=' and 'type' defaults to 'inner'.
         //     'joins' => [
         //         [
         //             'table' => '',
         //             'first' => '',
-        //             'operator' => '',
+        //             'operator' => '=',
         //             'second' => '',
         //             'type' => 'LEFT',
         //         ],
@@ -83,6 +97,6 @@ return [
      * Optional jobs to run after migrating all tables has been completed.
      */
     'after_jobs' => [
-        // Migration/AfterJobExample::class,
-    ]
+        // \App\Jobs\Migration\AfterJobExample::class,
+    ],
 ];

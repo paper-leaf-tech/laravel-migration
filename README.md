@@ -10,8 +10,9 @@ A Laravel package to simplify the process of running repeatable data migrations 
 
 ## 📦 Requirements
 
-- Laravel 11+
+- Laravel 11, 12 or 13 (the suite runs against all three)
 - PHP 8.2+
+- A `database` or `redis` queue connection. These are the only two drivers the command's queue-wait logic understands; any other value for `queue_connection` will fail once a migration starts.
 - If using a database queue the [jobs table](https://laravel.com/docs/12.x/queues#driver-prerequisites) must be present. A redis queue can ignore this requirement.
 
 ## 🚀 Installation
@@ -31,10 +32,17 @@ Install via Composer:
 composer require paper-leaf-tech/laravel-migration
 ```
 
-Publish the configuration and migration files:
+Publish the configuration file:
 ```bash
-php artisan laravel-migration:install
+php artisan migration:install
 ```
+
+> **Why `migration:install` and not `laravel-migration:install`?** `spatie/laravel-package-tools` builds the install command's name from the package's *short* name, which is the package name with the `laravel-` prefix stripped. The command is also registered as hidden, so it will not show up in `php artisan list`.
+>
+> If you prefer to publish the config directly:
+> ```bash
+> php artisan vendor:publish --tag=migration-config
+> ```
 
 ## 🛠 Usage
 
@@ -54,19 +62,67 @@ While developing your migration job, it is helpful to run a single migration job
 
 This command will utilize values in the `table_dependency_groups` array to run migration jobs in a specific order. Keep in mind that you will need to run the job queue in a separate command line for jobs to be processed.
 
+> `--all` iterates `table_dependency_groups`, **not** `table_job_mapping`. A table that is mapped but not listed in a dependency group is never migrated by `--all`; the command names any such table before it starts.
+
+### Options
+
+| Option | Effect |
+| --- | --- |
+| `--all`, `-A` | Migrate every table in `table_dependency_groups`, group by group. |
+| `--group=N` | Start `--all` from group `N` instead of group 0. |
+| `--dry-run` | Report the tables, row counts and job counts a run would produce, and dispatch nothing. |
+| `--chunk-size=N` | Override the configured chunk size — and any per-table `chunk_size` — for this run. |
+| `--queue` | Push a single table onto the queue instead of running it in this process. |
+| `--sync` | Run everything in this process, with no queue worker. Useful for `--all` while developing. |
+| `--no-wait` | Dispatch the jobs and exit instead of blocking until the queue drains. |
+
+Before a long run, look at what it will do:
+
+```bash
+php artisan migration:run --all --dry-run
+```
+
+```
++-----------+-----------+-------+
+| Table     | Rows      | Jobs  |
++-----------+-----------+-------+
+| USERS     | 1,204,338 | 2,409 |
+| COMPANIES | 88,120    | 177   |
++-----------+-----------+-------+
+Dry run: 1,292,458 rows across 2 tables would be migrated in 2,586 jobs. Nothing was dispatched.
+```
+
 ## ✅ Example
+
+Chunk queries select every column of the source table (and of any joined tables) under an **alias**, so the properties on `$item` are not the raw column names. Each column is prefixed with the initials of its table name, split on underscores:
+
+| Source table | Source column | Property on `$item` |
+| --- | --- | --- |
+| `USERS` | `FNAME` | `$item->U_FNAME` |
+| `USER_COMPANY` | `NAME` | `$item->U_C_NAME` |
+
+By default every column of the source table (and of any joined table) is selected, which is wasteful on wide legacy tables — each column is read from the source and carried in every chunk job's queue payload. Restrict the select with a `columns` key in the mapping:
+
+```php
+'USERS' => [
+    'job'     => Migration\UsersMigrationJob::class,
+    'columns' => ['FNAME', 'LNAME', 'EMAIL_ADDR'],
+],
+```
+
+The base table's primary key is always included. Qualify a name with its table (`'USERS.EMAIL_ADDR'`) when a join makes it ambiguous. An unknown column is reported by name before anything is dispatched.
 
 Here's how a typical `handleItem` function in a migration job might look:
 
 ```php
-public function handleItem($item): void
+public function handleItem(object $item): void
 {
     // Prepare the data to be stored into the Laravel model
     $data = [
-        'first_name' => $item->FNAME,
-        'last_name'  => $item->LNAME,
-        'email'      => $item->EMAIL_ADDR,
-        'updated_at' => $item->EDTIME ? Carbon::parse($item->EDTIME) : now(),
+        'first_name' => $item->U_FNAME,
+        'last_name'  => $item->U_LNAME,
+        'email'      => $item->U_EMAIL_ADDR,
+        'updated_at' => $item->U_EDTIME ? Carbon::parse($item->U_EDTIME) : now(),
     ];
 
     // Store the data, saving quietly so that any model observers don't trigger.
@@ -75,6 +131,25 @@ public function handleItem($item): void
     $record->saveQuietly();
 }
 ```
+
+### Migrating a chunk at a time
+
+`handleItem()` runs once per row, which means one write per row. When the destination writes can be batched, override `handleChunk()` instead — one upsert of 500 rows rather than 500 saves is usually the largest speed-up available to a migration job:
+
+```php
+public function handleChunk(iterable $items): void
+{
+    User::upsert(
+        collect($items)->map(fn (object $item): array => [
+            'legacy_id'  => $item->U_ID,
+            'first_name' => $item->U_FNAME,
+        ])->all(),
+        ['legacy_id'],
+    );
+}
+```
+
+Rows are streamed from the source, so a job that only implements `handleItem()` never holds the whole chunk in memory. Collecting the chunk, as above, opts into holding it.
 
 ## 🧩 How chunking works
 
@@ -94,6 +169,27 @@ Two things worth knowing:
 
 Chunk composition differs from versions before `1.1.0`. Upgrade between full migration runs, not partway through one.
 
+**Chunks are planned in the command process, not in a queued job.** Planning a large table takes longer than a worker's `--timeout` and longer than the connection's `retry_after`, and a released planning job re-dispatches chunks it had already dispatched — migrating those rows twice. Planning in the command removes that failure mode, and lets the command report row and job counts per table as it goes. Chunk jobs themselves are pushed to the queue in bulk: one multi-row insert per 500 jobs for the database driver, one pipelined transaction for Redis.
+
+## 🚨 When jobs fail
+
+While it waits for a group to drain, the command watches `failed_jobs` for the migration queue. Anything that fails during the run is reported and the command exits non-zero:
+
+```
+2 job(s) failed on the "migrations" queue. Inspect them with `php artisan queue:failed`.
+```
+
+Without a `failed_jobs` table there is nothing to watch, and failures are invisible — a migration can lose thousands of chunks and still look like it succeeded. Run `php artisan make:queue-failed-table` if your app has no such table.
+
+## 🧪 Testing
+
+```bash
+composer install
+composer test
+```
+
+The suite runs against in-memory SQLite via `orchestra/testbench`; no application or database setup is required.
+
 ## ⁉️ Common Issues
 
 #### Running out of memory
@@ -101,3 +197,9 @@ Jobs are by default chunked to process 500 rows of data per job. If the job perf
 
 #### Property not fillable
 The current structure requires that the model allows mass assignment of properties. You can add `protected $guarded = [];` to your model to allow all properties to be mass assigned.
+
+#### `php artisan migration:run --all` finishes instantly
+`--all` only walks `table_dependency_groups`. Populate that array — every table you want migrated needs an entry in a group, in dependency order.
+
+#### The command hangs after dispatching jobs
+`migration:run --all` waits for the queue to drain before moving to the next dependency group. Nothing drains it unless a worker is running, so start `php artisan queue:work --queue=<your migration queue>` in a separate terminal before dispatching. Use `--sync` to run without a worker, or `--no-wait` to dispatch and exit.

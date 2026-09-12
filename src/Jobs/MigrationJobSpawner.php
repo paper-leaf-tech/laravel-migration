@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Queue;
 
 class MigrationJobSpawner implements ShouldQueue
 {
@@ -26,6 +27,11 @@ class MigrationJobSpawner implements ShouldQueue
         'tinyint', 'smallint', 'mediumint', 'int', 'integer', 'bigint',
         'int2', 'int4', 'int8',
     ];
+
+    /**
+     * How many chunk jobs are pushed to the queue per statement.
+     */
+    protected const DISPATCH_BATCH_SIZE = 500;
 
     public int $totalCount = 0;
 
@@ -43,6 +49,15 @@ class MigrationJobSpawner implements ShouldQueue
      */
     protected array $primaryKeyColumns = [];
 
+    /**
+     * Precomputed keyset chunk boundaries, or null when the table falls back
+     * to offset chunking. Computed up front because the command needs
+     * jobCount before it dispatches anything.
+     *
+     * @var array<int, array{0: int, 1: int|null}>|null
+     */
+    protected ?array $boundaries = null;
+
     public function __construct(
         protected string $job_class,
         protected string $conn,
@@ -52,28 +67,33 @@ class MigrationJobSpawner implements ShouldQueue
         protected array $joins,
         protected int $chunk_size = 500,
         protected bool $sync = false,
+        protected array $columns = [],
     ) {
         $this->chunk_size = max(1, $this->chunk_size);
 
         $this->primaryKeyColumns = $this->resolvePrimaryKeyColumns();
         $this->keyColumn = $this->resolveKeyColumn();
 
-        $count_query = DB::connection($this->conn)
-            ->table($this->table_expr);
+        $this->assertSelectedColumnsExist();
 
-        $this->applyConstraints($count_query);
+        // Keyset chunking gets its totals from the boundary query, which walks
+        // the key column once and reports both the boundaries and the distinct
+        // key count. Only the offset fallback needs a separate count.
+        if ($this->keyColumn === null) {
+            $count_query = DB::connection($this->conn)->table($this->table_expr);
 
-        // Keyset chunking splits on distinct keys rather than joined rows, so
-        // the count that drives jobCount has to use the same unit.
-        $this->totalCount = $this->keyColumn === null
-            ? $count_query->count()
-            : $count_query->distinct()->count(new Expression($this->qualifyKeyColumn($this->keyColumn)));
+            $this->applyConstraints($count_query);
 
-        $this->jobCount = 0;
+            $this->totalCount = $count_query->count();
+            $this->jobCount = $this->totalCount === 0
+                ? 0
+                : (int) ceil($this->totalCount / $this->chunk_size);
 
-        if ($this->totalCount !== 0) {
-            $this->jobCount = (int) ceil($this->totalCount / $this->chunk_size);
+            return;
         }
+
+        $this->boundaries = $this->computeChunkBoundaries();
+        $this->jobCount = count($this->boundaries);
     }
 
     public function handle(): void
@@ -81,22 +101,33 @@ class MigrationJobSpawner implements ShouldQueue
         // ⚙️ Precompute aliased columns once per job
         $selectColumns = $this->getPrefixedColumns();
 
-        if ($this->keyColumn === null) {
-            $this->dispatchOffsetChunks($selectColumns);
+        $this->dispatchChunks(
+            $this->keyColumn === null
+                ? $this->offsetChunkQueries($selectColumns)
+                : $this->keysetChunkQueries($selectColumns)
+        );
+    }
 
-            return;
-        }
-
+    /**
+     * The chunk queries for a table with a usable key column.
+     *
+     * A generator so that a table split into tens of thousands of chunks never
+     * holds every query builder in memory at once.
+     *
+     * @return \Generator<int, Builder>
+     */
+    protected function keysetChunkQueries(array $selectColumns): \Generator
+    {
         $qualifiedKey = $this->qualifyKeyColumn($this->keyColumn);
 
-        foreach ($this->getChunkBoundaries() as [$lowerBound, $upperBound]) {
+        foreach ($this->boundaries ?? [] as [$lowerBound, $upperBound]) {
             $query = DB::connection($this->conn)
                 ->table($this->table_expr)
                 ->select($selectColumns);
 
             $this->applyConstraints($query);
 
-            // Raw predicates with cast integers. dispatchChunk() ships
+            // Raw predicates with cast integers. dispatchChunks() ships
             // $query->toSql(), which discards bindings entirely, so a bound
             // where() would silently lose its value.
             $query->whereRaw($qualifiedKey.' >= '.(int) $lowerBound);
@@ -109,7 +140,7 @@ class MigrationJobSpawner implements ShouldQueue
             // already quoted qualified identifier on its dots.
             $query->orderByRaw($qualifiedKey.' asc');
 
-            $this->dispatchChunk($query);
+            yield $query;
         }
     }
 
@@ -121,7 +152,7 @@ class MigrationJobSpawner implements ShouldQueue
      * table with no primary key at all has nothing deterministic to order by
      * and keeps the previous behaviour, having warned in the constructor.
      */
-    protected function dispatchOffsetChunks(array $selectColumns): void
+    protected function offsetChunkQueries(array $selectColumns): \Generator
     {
         $orderBy = $this->getFallbackOrderBy();
 
@@ -140,26 +171,57 @@ class MigrationJobSpawner implements ShouldQueue
                 $query->orderByRaw($orderBy);
             }
 
-            $this->dispatchChunk($query);
+            yield $query;
         }
     }
 
-    protected function dispatchChunk(Builder $query): void
+    /**
+     * Push the chunk jobs onto the queue.
+     *
+     * Queued jobs go out through the driver's bulk API, which is one multi-row
+     * insert for the database driver and one pipelined transaction for Redis,
+     * rather than a round trip per chunk. Pushes are capped at
+     * DISPATCH_BATCH_SIZE so a table split into tens of thousands of chunks
+     * does not build one enormous statement.
+     *
+     * @param  iterable<Builder>  $queries
+     */
+    protected function dispatchChunks(iterable $queries): void
     {
-        $migration_job = (new $this->job_class)
-            ->setQuery($query->toSql())
-            ->setConnection($this->conn)
-            ->setTable($this->table);
+        $pending = [];
 
-        if ($this->sync) {
-            dispatch_sync($migration_job);
+        foreach ($queries as $query) {
+            $migration_job = (new $this->job_class)
+                ->setQuery($query->toSql())
+                ->setConnection($this->conn)
+                ->setTable($this->table);
 
-            return;
+            if ($this->sync) {
+                dispatch_sync($migration_job);
+
+                continue;
+            }
+
+            $pending[] = $migration_job;
+
+            if (count($pending) >= self::DISPATCH_BATCH_SIZE) {
+                $this->pushChunks($pending);
+                $pending = [];
+            }
         }
 
-        dispatch($migration_job)
-            ->onConnection(config('laravel-migration.queue_connection'))
-            ->onQueue(config('laravel-migration.queue_name'));
+        if ($pending !== []) {
+            $this->pushChunks($pending);
+        }
+    }
+
+    /**
+     * @param  array<int, object>  $jobs
+     */
+    protected function pushChunks(array $jobs): void
+    {
+        Queue::connection(config('laravel-migration.queue_connection'))
+            ->bulk($jobs, '', config('laravel-migration.queue_name'));
     }
 
     /**
@@ -173,12 +235,15 @@ class MigrationJobSpawner implements ShouldQueue
      * source key therefore falls in exactly one chunk. The trade off is that a
      * fanning join can produce a chunk carrying more than chunk_size rows.
      *
+     * The same pass also reports the total number of distinct keys via
+     * COUNT(*) OVER (), so totalCount costs nothing beyond this query.
+     *
      * @return array<int, array{0: int, 1: int|null}> [lowerBound, upperBound]
      *                                                pairs. The final upper
      *                                                bound is null, leaving
      *                                                the last chunk open ended.
      */
-    protected function getChunkBoundaries(): array
+    protected function computeChunkBoundaries(): array
     {
         $qualifiedKey = $this->qualifyKeyColumn($this->keyColumn);
 
@@ -193,18 +258,21 @@ class MigrationJobSpawner implements ShouldQueue
         // level, which avoids any question about window versus group by
         // evaluation order across engines.
         $sql = sprintf(
-            'select chunk_key from ('
-                .'select chunk_key, row_number() over (order by chunk_key) as row_num'
+            'select chunk_key, total_keys from ('
+                .'select chunk_key,'
+                .' row_number() over (order by chunk_key) as row_num,'
+                .' count(*) over () as total_keys'
                 .' from (%s) as distinct_keys'
             .') as ordered_keys where (row_num - 1) %% %d = 0 order by row_num',
             $distinctKeys->toSql(),
             $this->chunk_size
         );
 
-        $keys = array_map(
-            static fn (object $row): int => (int) $row->chunk_key,
-            DB::connection($this->conn)->select($sql)
-        );
+        $rows = DB::connection($this->conn)->select($sql);
+
+        $this->totalCount = $rows === [] ? 0 : (int) $rows[0]->total_keys;
+
+        $keys = array_map(static fn (object $row): int => (int) $row->chunk_key, $rows);
 
         $boundaries = [];
 
@@ -231,16 +299,61 @@ class MigrationJobSpawner implements ShouldQueue
 
         $column = $this->primaryKeyColumns[0];
 
-        try {
-            $type = collect(DB::connection($this->conn)->getSchemaBuilder()->getColumns($this->table))
-                ->firstWhere('name', $column)['type_name'] ?? null;
-        } catch (\Throwable $e) {
-            $this->warn('could not inspect columns', $e);
-
-            return null;
-        }
+        $type = collect($this->sourceColumns($this->table))
+            ->firstWhere('name', $column)['type_name'] ?? null;
 
         return in_array($type, self::INTEGER_TYPES, true) ? $column : null;
+    }
+
+    /**
+     * The source table's columns, read once per table per cache lifetime.
+     *
+     * The constructor needs column types to pick a key column and handle()
+     * needs column names to build the select, so both go through here rather
+     * than issuing their own schema queries.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function sourceColumns(string $table): array
+    {
+        return $this->rememberSchema($table, 'columns', fn (): array => DB::connection($this->conn)
+            ->getSchemaBuilder()
+            ->getColumns($table));
+    }
+
+    /**
+     * The source table's indexes, read once per table per cache lifetime.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    protected function sourceIndexes(string $table): array
+    {
+        return $this->rememberSchema($table, 'indexes', fn (): array => DB::connection($this->conn)
+            ->getSchemaBuilder()
+            ->getIndexes($table));
+    }
+
+    /**
+     * Cache one piece of schema for a source table.
+     *
+     * Source databases are being read out of, not written to, so the schema is
+     * treated as fixed for the life of the cache. Clear the cache if the legacy
+     * schema changes mid-project.
+     *
+     * @param  \Closure(): array<int, array<string, mixed>>  $callback
+     * @return array<int, array<string, mixed>>
+     */
+    protected function rememberSchema(string $table, string $kind, \Closure $callback): array
+    {
+        $key = "laravel-migration:schema:{$this->conn}:{$table}:{$kind}";
+
+        try {
+            return cache()->rememberForever($key, $callback);
+        } catch (\Throwable $e) {
+            $this->warn("could not inspect {$kind}", $e);
+
+            return [];
+        }
     }
 
     /**
@@ -248,14 +361,8 @@ class MigrationJobSpawner implements ShouldQueue
      */
     protected function resolvePrimaryKeyColumns(): array
     {
-        try {
-            $primary = collect(DB::connection($this->conn)->getSchemaBuilder()->getIndexes($this->table))
-                ->first(fn (array $index): bool => ($index['primary'] ?? false) === true);
-        } catch (\Throwable $e) {
-            $this->warn('could not inspect indexes', $e);
-
-            return [];
-        }
+        $primary = collect($this->sourceIndexes($this->table))
+            ->first(fn (array $index): bool => ($index['primary'] ?? false) === true);
 
         if ($primary === null) {
             $this->warn('has no primary key, so its chunks cannot be ordered deterministically. Rows may be processed twice or skipped');
@@ -301,13 +408,23 @@ class MigrationJobSpawner implements ShouldQueue
 
     /**
      * Qualify a column against the base table.
-     *
-     * This mirrors MigrationCommand::getTableNameExpression() by backticking
-     * the whole table name, which is MySQL/MariaDB specific.
      */
     protected function qualifyKeyColumn(string $column): string
     {
-        return sprintf('`%s`.`%s`', $this->table, $column);
+        return self::qualifyColumn($this->table, $column);
+    }
+
+    /**
+     * Qualify a column against a table.
+     *
+     * This mirrors MigrationCommand::getTableNameExpression() by backticking
+     * the whole table name — which is MySQL/MariaDB specific — so that a table
+     * name containing a dot stays a single identifier instead of being split
+     * into schema and table by the query grammar.
+     */
+    protected static function qualifyColumn(string $table, string $column): string
+    {
+        return sprintf('`%s`.`%s`', $table, $column);
     }
 
     protected function getFallbackOrderBy(): ?string
@@ -330,8 +447,16 @@ class MigrationJobSpawner implements ShouldQueue
             $query->whereRaw($where);
         }
 
+        // Only table, first and second are required; the config documents
+        // operator and type as optional.
         foreach ($this->joins as $join) {
-            $query->join($join['table'], $join['first'], $join['operator'], $join['second'], $join['type']);
+            $query->join(
+                $join['table'],
+                $join['first'],
+                $join['operator'] ?? '=',
+                $join['second'],
+                $join['type'] ?? 'inner'
+            );
         }
     }
 
@@ -347,34 +472,138 @@ class MigrationJobSpawner implements ShouldQueue
     }
 
     /**
-     * Build a list of all columns from the base table and joined tables,
-     * each prefixed with its table name.
+     * Build the chunk query's select list, each column aliased with the
+     * initials of its table name so that same-named columns on joined tables
+     * do not collide (USERS.FNAME becomes U_FNAME).
+     *
+     * Returned as expressions because the identifiers are already quoted; a
+     * plain string would be re-split on its dots by the grammar.
+     *
+     * @return array<int, Expression>
      */
     protected function getPrefixedColumns(): array
     {
-        $tables = [$this->table];
-
-        foreach ($this->joins as $join) {
-            $tables[] = $join['table'];
-        }
-
-        $schema = DB::connection($this->conn)->getSchemaBuilder();
         $columns = [];
 
-        foreach ($tables as $table) {
-            $cols = cache()->rememberForever("columns_{$this->conn}_{$table}", function () use ($schema, $table) {
-                return $schema->getColumnListing($table);
-            });
-
-            $prefix = collect(explode('_', $table))
-                ->map(fn ($part) => substr($part, 0, 1))
-                ->implode('_');
-
-            foreach ($cols as $col) {
-                $columns[] = "{$table}.{$col} AS {$prefix}_{$col}";
-            }
+        foreach ($this->selectedColumns() as [$table, $column]) {
+            $columns[] = new Expression(sprintf(
+                '%s as `%s_%s`',
+                self::qualifyColumn($table, $column),
+                $this->aliasPrefix($table),
+                $column
+            ));
         }
 
         return $columns;
+    }
+
+    /**
+     * The [table, column] pairs the chunk query selects.
+     *
+     * With no configured projection this is every column of every table
+     * involved, which is what the package has always done. A configured
+     * projection narrows it to the listed columns plus the base table's
+     * primary key, which the chunk query orders by and which migration jobs
+     * almost always need.
+     *
+     * @return array<int, array{0: string, 1: string}>
+     */
+    protected function selectedColumns(): array
+    {
+        if ($this->columns === []) {
+            $all = [];
+
+            foreach ($this->selectableTables() as $table) {
+                foreach (array_column($this->sourceColumns($table), 'name') as $column) {
+                    $all[] = [$table, $column];
+                }
+            }
+
+            return $all;
+        }
+
+        $selected = [];
+
+        foreach ($this->primaryKeyColumns as $column) {
+            $selected["{$this->table}.{$column}"] = [$this->table, $column];
+        }
+
+        foreach ($this->columns as $specification) {
+            [$table, $column] = $this->resolveColumn($specification);
+            $selected["{$table}.{$column}"] = [$table, $column];
+        }
+
+        return array_values($selected);
+    }
+
+    /**
+     * Fail at dispatch time, in the command, rather than once per chunk job on
+     * a worker where the only symptom is a column-not-found SQL error.
+     */
+    protected function assertSelectedColumnsExist(): void
+    {
+        $unknown = [];
+
+        foreach ($this->columns as $specification) {
+            [$table, $column] = $this->resolveColumn($specification);
+
+            if (! in_array($column, array_column($this->sourceColumns($table), 'name'), true)) {
+                $unknown[] = $specification;
+            }
+        }
+
+        if ($unknown !== []) {
+            throw new \InvalidArgumentException(sprintf(
+                'Table "%s" is configured to migrate columns that do not exist on connection "%s": %s.',
+                $this->table,
+                $this->conn,
+                implode(', ', $unknown)
+            ));
+        }
+    }
+
+    /**
+     * Split a configured column into its table and column.
+     *
+     * Table names may themselves contain a dot, so the known table names are
+     * matched longest-first rather than splitting on the first dot. An
+     * unqualified name belongs to the base table.
+     *
+     * @return array{0: string, 1: string}
+     */
+    protected function resolveColumn(string $specification): array
+    {
+        $tables = $this->selectableTables();
+
+        usort($tables, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+
+        foreach ($tables as $table) {
+            if (str_starts_with($specification, $table.'.')) {
+                return [$table, substr($specification, strlen($table) + 1)];
+            }
+        }
+
+        return [$this->table, $specification];
+    }
+
+    /**
+     * The base table plus every joined table.
+     *
+     * @return array<int, string>
+     */
+    protected function selectableTables(): array
+    {
+        return array_merge([$this->table], array_column($this->joins, 'table'));
+    }
+
+    /**
+     * The alias prefix for a table: the initials of its underscore-separated
+     * parts, so USER_COMPANY becomes U_C.
+     */
+    protected function aliasPrefix(string $table): string
+    {
+        return collect(explode('_', $table))
+            ->map(fn (string $part): string => substr($part, 0, 1))
+            ->implode('_');
     }
 }

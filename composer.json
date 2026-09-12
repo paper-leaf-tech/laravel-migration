@@ -10,6 +10,10 @@
   ],
   "require": {
     "php": "^8.2",
+    "illuminate/console": "^11.0|^12.0|^13.0",
+    "illuminate/database": "^11.0|^12.0|^13.0",
+    "illuminate/queue": "^11.0|^12.0|^13.0",
+    "illuminate/support": "^11.0|^12.0|^13.0",
     "spatie/laravel-package-tools": "^1.92"
   },
   "autoload": {
@@ -25,6 +29,18 @@
     }
   },
   "require-dev": {
-    "laravel/pint": "^1.24"
+    "laravel/pint": "^1.24",
+    "orchestra/testbench": "^9.0|^10.0|^11.0"
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "PaperleafTech\\LaravelMigration\\Tests\\": "tests"
+    }
+  },
+  "scripts": {
+    "test": "vendor/bin/phpunit"
+  },
+  "config": {
+    "sort-packages": true
   }
 }

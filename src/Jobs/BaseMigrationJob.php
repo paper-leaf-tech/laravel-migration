@@ -4,6 +4,7 @@ namespace PaperleafTech\LaravelMigration\Jobs;
 
 use Illuminate\Bus\Queueable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\LazyCollection;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -57,13 +58,47 @@ class BaseMigrationJob implements ShouldQueue
      */
     public function handle(): void
     {
-        $items = DB::connection($this->conn)
-            ->select($this->query);
+        $this->handleChunk($this->fetchChunk());
+    }
 
+    /**
+     * Handle every row in this chunk.
+     *
+     * Override this instead of handleItem() when the destination writes can be
+     * batched — one upsert of 500 rows rather than 500 saves is typically the
+     * largest single speed-up available to a migration job:
+     *
+     *     public function handleChunk(iterable $items): void
+     *     {
+     *         User::upsert(
+     *             collect($items)->map($this->toRow(...))->all(),
+     *             ['legacy_id'],
+     *         );
+     *     }
+     *
+     * @param  iterable<object>  $items
+     */
+    public function handleChunk(iterable $items): void
+    {
         foreach ($items as $item) {
             $this->handleItem($item);
         }
     }
+
+    /**
+     * Stream this chunk's rows from the source connection.
+     *
+     * A lazy collection rather than an array, so a job that only implements
+     * handleItem() never holds the whole chunk in memory at once, and a job
+     * that wants the whole chunk can still collect() it.
+     *
+     * @return \Illuminate\Support\LazyCollection<int, object>
+     */
+    protected function fetchChunk(): LazyCollection
+    {
+        return LazyCollection::make(fn () => yield from DB::connection($this->conn)->cursor($this->query));
+    }
+
     /**
      * This function is implemented in child class.
      */

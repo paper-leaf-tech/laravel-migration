@@ -10,6 +10,9 @@ class DummyJob extends BaseMigrationJob implements MigrationJobInterface
     /**
      * Handle the migration job for the given item.
      *
+     * Columns arrive aliased with the initials of their source table, so a
+     * FNAME column on the USERS table is available as $item->U_FNAME.
+     *
      * @param object $item
      * @return void
      */
@@ -22,7 +25,31 @@ class DummyJob extends BaseMigrationJob implements MigrationJobInterface
             // The record's data to be stored in the model.
         ];
 
-        $record->fill($data);
-        $record->saveQuietly();
+        // TODO: replace DummyModel with the model this table migrates into,
+        // then uncomment. saveQuietly() keeps model observers from firing.
+        //
+        // $record = new \App\Models\DummyModel();
+        // $record->fill($data);
+        // $record->saveQuietly();
     }
+
+    /**
+     * Handle the whole chunk at once.
+     *
+     * Override this instead of handleItem() when the destination writes can be
+     * batched. One upsert of 500 rows instead of 500 individual saves is
+     * usually the single largest speed-up available to a migration job.
+     *
+     * @param iterable<object> $items
+     * @return void
+     */
+    // public function handleChunk(iterable $items): void
+    // {
+    //     $rows = collect($items)->map(fn (object $item): array => [
+    //         'legacy_id' => $item->D_ID,
+    //         // ...
+    //     ])->all();
+    //
+    //     \App\Models\DummyModel::upsert($rows, ['legacy_id']);
+    // }
 }
