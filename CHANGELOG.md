@@ -4,6 +4,7 @@ All notable changes to `laravel-migration` will be documented in this file
 
 ## 2.1.0
 
+- Added an agent skill at `resources/boost/skills/writing-migration-jobs/`, covering column projection, `handleChunk()` over `handleItem()`, the plan/insert/resolve pattern, and the anti-patterns that make a migration slow. Laravel Boost discovers it automatically in any application requiring this package directly; other setups can point an agent at the file. A test pins its location and checks that every writer method it documents still exists.
 - Added `BulkWriter` and `BaseMigrationJob::writer()`, for migration jobs that write a parent row so they can use its new id for child rows. `insertAndMap()` writes a level in one statement and returns `[legacy id => new id]`, so the next level can be planned in memory and written in one statement too. `add()`/`addMany()` buffer into a shared writer that the chunk flushes when it finishes, so logic split across traits does not each write its own rows.
 - `BulkWriter` gives every row in a batch the same columns. Laravel's `insert()` takes its column list from the first row and sorts each row's values by key, so a row with a different key set lands in the wrong columns without raising anything; a missing value is now an explicit null.
 - Batches are split to stay under MySQL's 65,535 bound-parameter ceiling, and id read-backs are split into `IN ()` lists of 5,000.

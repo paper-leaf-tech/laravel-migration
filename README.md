@@ -240,6 +240,24 @@ While it waits for a group to drain, the command watches `failed_jobs` for the m
 
 Without a `failed_jobs` table there is nothing to watch, and failures are invisible — a migration can lose thousands of chunks and still look like it succeeded. Run `php artisan make:queue-failed-table` if your app has no such table.
 
+## 🤖 For AI agents
+
+The package ships an agent skill covering how to write a migration job that
+performs: column projection, `handleChunk()` over `handleItem()`, and the
+plan / insert / resolve pattern for writing a parent level and then its
+children in one statement each.
+
+[Laravel Boost](https://github.com/laravel/boost) discovers it automatically in
+any application that requires this package directly — run `php artisan
+boost:install` and enable `writing-migration-jobs`. It is installed to
+`.ai/skills/` and linked into your agent's skills directory.
+
+Without Boost, point your agent at it directly:
+
+```
+vendor/paper-leaf-tech/laravel-migration/resources/boost/skills/writing-migration-jobs/SKILL.md
+```
+
 ## 🧪 Testing
 
 ```bash
