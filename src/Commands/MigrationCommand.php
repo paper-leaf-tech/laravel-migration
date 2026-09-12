@@ -359,21 +359,27 @@ class MigrationCommand extends Command
     {
         $failedBefore = $this->failedJobCount();
 
-        $progressBar->setFormat(
-            '  %current%/%max% [%bar%] %percent:3s%%  elapsed %elapsed:6s%  eta %estimated:-6s%  %memory:6s%'
-        );
+        // Deliberately no elapsed/estimated/memory. Progress here is driven by
+        // queue depth, which moves in bursts as workers pick chunks up, so a
+        // linear time estimate is noise; and the memory reading is this
+        // command's, not the workers' doing the actual migrating.
+        $progressBar->setFormat('  %current%/%max% jobs [%bar%] %percent:3s%%');
         $progressBar->start($jobCount);
 
         $remaining = $this->getQueueCount();
         $wait      = 1;
 
-        while ($remaining > 0) {
-            $progressBar->setProgress(max(0, $jobCount - $remaining));
+        $progressBar->setProgress(max(0, $jobCount - $remaining));
 
+        while ($remaining > 0) {
             sleep($wait);
 
             $previous  = $remaining;
             $remaining = $this->getQueueCount();
+
+            // Redraw after the poll, so the bar shows what was just observed
+            // rather than the depth from the previous round.
+            $progressBar->setProgress(max(0, $jobCount - $remaining));
 
             // Responsive while the queue is moving, quiet while it is not.
             $wait = $remaining === $previous

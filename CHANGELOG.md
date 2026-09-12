@@ -2,6 +2,11 @@
 
 All notable changes to `laravel-migration` will be documented in this file
 
+## 2.0.1
+
+- Dropped elapsed time, the estimated-time reading and the memory reading from the queue progress bar. The times rendered as `< 1 ms` with ragged padding and told you nothing useful — progress here is driven by queue depth, which moves in bursts as workers pick chunks up, so a linear extrapolation is noise. The memory figure was the command process's own, not the workers' doing the migrating. The bar now reads `1204/2409 jobs [=====>----] 49%`.
+- The progress bar is redrawn after each poll rather than before it, so the figure shown is the depth just observed instead of the previous round's.
+
 ## 2.0.0
 
 Correctness, performance and reporting work across the command and the chunk
