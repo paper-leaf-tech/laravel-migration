@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Symfony\Component\Console\Helper\ProgressBar;
 use PaperleafTech\LaravelMigration\Jobs\MigrationJobSpawner;
+use PaperleafTech\LaravelMigration\Support\SourceIdentifiers;
 
 class MigrationCommand extends Command
 {
@@ -753,7 +754,7 @@ class MigrationCommand extends Command
                 $migrationItem['job'],
                 $this->connection,
                 $table,
-                self::getTableNameExpression($table),
+                self::getTableNameExpression($table, $this->connection),
                 $migrationItem['wheres'],
                 $migrationItem['joins'],
                 $migrationItem['chunk_size'],
@@ -768,15 +769,18 @@ class MigrationCommand extends Command
     }
 
     /**
-     * This is a workaround for having a dot in the table name.
+     * The source table name, quoted by the source connection's grammar.
+     *
+     * On MySQL and MariaDB a dot stays part of one table identifier, which is
+     * how legacy tables with a dot in their name have always been handled.
+     * On every other driver it separates schema and table, so a PostgreSQL
+     * source can be read as `schema.table`. See SourceIdentifiers.
+     *
+     * @param  string|null  $connection  The source connection, or null for the configured one.
      */
-    public static function getTableNameExpression(string $table): Expression
+    public static function getTableNameExpression(string $table, ?string $connection = null): Expression
     {
-        if ( strpos($table, '.') !== false ) {
-            return new Expression(sprintf('`%s`', $table));
-        }
-
-        return new Expression($table);
+        return new Expression(SourceIdentifiers::for($connection)->table($table));
     }
 
     public static function getMigrationItem(string|array $mapping, string $table, ?int $chunkSizeOverride = null): ?array

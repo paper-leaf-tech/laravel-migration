@@ -29,9 +29,10 @@ use InvalidArgumentException;
 class BulkWriter
 {
     /**
-     * Placeholder ceiling for one statement. MySQL's hard limit is 65,535
-     * bound parameters; the batch size is derived from this and the row's
-     * column count.
+     * Placeholder ceiling for one statement on MySQL, MariaDB and PostgreSQL,
+     * whose hard limit is 65,535 bound parameters. The batch size is derived
+     * from the destination's ceiling and the row's column count; see
+     * placeholderCeiling() for the drivers with lower limits.
      */
     protected const MAX_PLACEHOLDERS = 60000;
 
@@ -159,7 +160,7 @@ class BulkWriter
      */
     protected function batches(array $rows): \Generator
     {
-        $perStatement = max(1, intdiv(self::MAX_PLACEHOLDERS, count($rows[0])));
+        $perStatement = max(1, intdiv($this->placeholderCeiling(), count($rows[0])));
 
         $batch = [];
         $bytes = 0;
@@ -235,7 +236,9 @@ class BulkWriter
 
         $map = [];
 
-        foreach (array_chunk($values, self::MAX_KEYS_PER_LOOKUP) as $batch) {
+        $perLookup = min(self::MAX_KEYS_PER_LOOKUP, $this->placeholderCeiling());
+
+        foreach (array_chunk($values, $perLookup) as $batch) {
             foreach ($this->connection()->table($table)->whereIn($key, $batch)->get([$key, $id]) as $row) {
                 $map[$row->{$key}] = (int) $row->{$id};
             }
@@ -284,6 +287,23 @@ class BulkWriter
                 .'["user_id" => 1]. A positional list was given instead.'
             );
         }
+    }
+
+    /**
+     * How many bound parameters one statement may carry on the destination.
+     *
+     * SQLite allows 32,766 from 3.32 and 999 before it; SQL Server allows
+     * 2,100. Each is kept a little under its limit, as MAX_PLACEHOLDERS is.
+     */
+    protected function placeholderCeiling(): int
+    {
+        $connection = $this->connection();
+
+        return match ($connection->getDriverName()) {
+            'sqlite' => version_compare((string) $connection->getServerVersion(), '3.32', '>=') ? 32000 : 990,
+            'sqlsrv' => 2000,
+            default => self::MAX_PLACEHOLDERS,
+        };
     }
 
     protected function connection(): Connection

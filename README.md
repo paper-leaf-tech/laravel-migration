@@ -14,6 +14,36 @@ A Laravel package to simplify the process of running repeatable data migrations 
 - PHP 8.2+
 - A `database` or `redis` queue connection. These are the only two drivers the command's queue-wait logic understands; any other value for `queue_connection` will fail once a migration starts.
 - If using a database queue the [jobs table](https://laravel.com/docs/12.x/queues#driver-prerequisites) must be present. A redis queue can ignore this requirement.
+- A source and destination on any of MySQL, MariaDB, PostgreSQL or SQLite, in any combination. See [Source and destination databases](#-source-and-destination-databases).
+
+## 🗄 Source and destination databases
+
+The package reads from the `database_connection` in `config/laravel-migration.php` (the *source*) and your jobs write to the application's connections (the *destination*). The two are independent, so any source driver works with any destination driver:
+
+| Source | Destination |
+| --- | --- |
+| MySQL / MariaDB | MySQL / MariaDB |
+| MySQL / MariaDB | PostgreSQL |
+| PostgreSQL | MySQL / MariaDB |
+| PostgreSQL | PostgreSQL |
+| SQLite | any of the above (the test suite runs SQLite to SQLite) |
+
+SQL Server is quoted by its own grammar and has its lower bound-parameter limit respected, but is untested.
+
+Every identifier in the chunk SQL is quoted by the source connection's own query grammar — backticks on MySQL, double quotes on PostgreSQL and SQLite, brackets on SQL Server. Destination writes go through Laravel's query builder, so they follow the destination's grammar too. Anything you write by hand, such as `wheres` in the mapping, is applied verbatim: quote it for the source engine.
+
+**Dotted table names** are read according to the source driver:
+
+| Source driver | `'legacy.user_account'` means |
+| --- | --- |
+| PostgreSQL, SQLite, SQL Server | Table `user_account` in schema (or attached database) `legacy`. |
+| MySQL, MariaDB | One table literally named `legacy.user_account`, as in every earlier version. |
+
+The MySQL reading is kept for compatibility with legacy tables that have a dot in their name. A schema qualifier is not part of the alias prefix: on PostgreSQL, `legacy.user_account`'s columns are aliased `U_A_*`.
+
+**Alias case.** PostgreSQL folds unquoted identifiers to lower case, so a legacy schema created as `USER_ACCOUNT.USER_ID` without quotes reads back as `user_account.user_id`. To keep job code written against the legacy names working, aliases on a PostgreSQL source are upper-cased by default (`$item->U_A_USER_ID`). Every other driver keeps the case the catalog reports, as before. Set `alias_case` (or `MIGRATION_ALIAS_CASE`) to `upper`, `lower` or `preserve` to choose explicitly. Aliases are always quoted, so the case they are built in is the case your job sees.
+
+PostgreSQL truncates identifiers longer than 63 bytes, aliases included. A very long table-initials-plus-column alias will reach the job truncated.
 
 ## 🚀 Installation
 
@@ -94,7 +124,7 @@ Dry run: 1,292,458 rows across 2 tables would be migrated in 2,586 jobs. Nothing
 
 ## ✅ Example
 
-Chunk queries select every column of the source table (and of any joined tables) under an **alias**, so the properties on `$item` are not the raw column names. Each column is prefixed with the initials of its table name, split on underscores:
+Chunk queries select every column of the source table (and of any joined tables) under an **alias**, so the properties on `$item` are not the raw column names. Each column is prefixed with the initials of its table name, split on underscores (on a PostgreSQL source the alias is upper-cased by default; see [Alias case](#-source-and-destination-databases)):
 
 | Source table | Source column | Property on `$item` |
 | --- | --- | --- |
@@ -217,14 +247,13 @@ Each source table is split into chunk jobs by **primary key range** (keyset chun
 Keyset chunking engages when both hold:
 
 - The source table has a **single-column integer primary key**. Boundary values are inlined into the chunk SQL rather than bound, so the integer restriction is what makes the query safe to build.
-- The engine supports window functions — **MySQL 8.0+ or MariaDB 10.2+**. All other drivers Laravel supports qualify.
+- The source engine supports window functions — **MySQL 8.0+, MariaDB 10.2+, SQLite 3.25+, PostgreSQL or SQL Server**. A third-party driver not in that list falls back to offset chunking rather than risk boundary SQL it may not accept.
 
 Otherwise the package falls back to offset chunking with an `ORDER BY` over the primary key, which is still deterministic. A table with **no primary key at all** has nothing stable to order by, so it keeps the old unordered behaviour and logs a warning naming the table. If you migrate such a table, add a primary key to the source or accept that rows may be processed twice or skipped.
 
 Two things worth knowing:
 
 - **Counts are in distinct keys.** When keyset chunking is active, the chunk size and the progress bar count distinct primary keys, not joined rows. A one-to-many join can therefore produce a chunk carrying more rows than `chunk_size`. This is deliberate: aligning boundaries to keys is what prevents a key from straddling two chunks.
-- **Identifier quoting is MySQL/MariaDB specific.** Key columns are qualified with backticks, matching the existing handling of table names that contain a dot.
 
 Chunk composition differs from versions before `1.1.0`. Upgrade between full migration runs, not partway through one.
 
@@ -265,7 +294,15 @@ composer install
 composer test
 ```
 
-The suite runs against in-memory SQLite via `orchestra/testbench`; no application or database setup is required.
+The suite runs against in-memory SQLite via `orchestra/testbench`; no application or database setup is required. SQLite is a non-MySQL source, so the suite also checks that no MySQL-only quoting reaches the source; MySQL and PostgreSQL quoting is checked against their grammars without a server.
+
+To also read a real PostgreSQL table through the package, point the optional test at one. It makes its session read-only and creates nothing:
+
+```bash
+MIGRATION_TEST_PGSQL_URL=pgsql://user:secret@127.0.0.1:5432/legacy \
+MIGRATION_TEST_PGSQL_TABLE=some_schema.some_table \
+vendor/bin/phpunit --filter PostgresSourceTest
+```
 
 ## ⁉️ Common Issues
 
