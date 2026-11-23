@@ -30,6 +30,12 @@ underscores. This trips people up constantly:
 | `USERS` | `FNAME` | `$item->U_FNAME` |
 | `USER_COMPANY` | `NAME` | `$item->U_C_NAME` |
 
+A schema qualifier is not part of the prefix: on a PostgreSQL source,
+`legacy.user_account.user_id` is `$item->U_A_USER_ID`. PostgreSQL aliases
+are upper-cased by default, since unquoted legacy names arrive folded to lower
+case; other drivers keep the catalog's case. The `alias_case` config key
+overrides both.
+
 ## Select only the columns you use
 
 Without a `columns` key, every column of the base table and of every joined

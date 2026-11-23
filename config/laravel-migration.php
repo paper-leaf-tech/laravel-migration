@@ -28,9 +28,27 @@ return [
     'default_chunk_size' => env('MIGRATION_CHUNK_SIZE', 500),
 
     /**
+     * The case of the column aliases a migration job reads ($item->U_FNAME).
+     * Aliases are the table's initials plus the column name, and are quoted,
+     * so this is the case the job sees on every driver:
+     *
+     *   null       Driver default: "upper" on PostgreSQL, which folds unquoted
+     *              legacy UPPER_CASE names to lower case, and "preserve"
+     *              everywhere else.
+     *   "upper"    Always upper case.
+     *   "lower"    Always lower case.
+     *   "preserve" The case the source catalog reports.
+     */
+    'alias_case' => env('MIGRATION_ALIAS_CASE'),
+
+    /**
      * The mapping for old table names to migration job classes. You can either provide
      * a value of a single migration job or an array containing a required job key, and
      * optional wheres, joins, and chunk_size keys.
+     *
+     * A dot in a table name is read as schema.table on PostgreSQL, SQLite and
+     * SQL Server sources ('legacy.user_account'). On MySQL and MariaDB it
+     * stays part of one table name, as it always has.
      */
     'table_job_mapping' => [
         // 'USERS' => \App\Jobs\Migration\UsersMigrationJob::class,
@@ -40,10 +58,11 @@ return [
         //     'job' => \App\Jobs\Migration\CompaniesMigrationJob::class,
 
         //     // Optionally provide WHERE conditions for the source database query.
-        //     // These are applied verbatim, so quote literals as the source engine expects.
+        //     // These are applied verbatim, so quote identifiers and literals as the
+        //     // source engine expects (backticks are MySQL only).
         //     'wheres' => [
-        //         '(`account_locked` = 0)',
-        //         "(`created_at` < '2020-01-01')",
+        //         '(account_locked = 0)',
+        //         "(created_at < '2020-01-01')",
         //     ],
 
         //     // Optionally provide an override chunk size if the job performs a lot of work.

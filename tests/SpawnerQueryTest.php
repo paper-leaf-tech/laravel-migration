@@ -56,18 +56,7 @@ class SpawnerQueryTest extends TestCase
         $this->assertSame('Acme', RecordingJob::$items[0]->C_NAME);
     }
 
-    public function test_a_table_name_containing_a_dot_is_quoted_as_a_single_identifier(): void
-    {
-        $method = new ReflectionMethod(MigrationJobSpawner::class, 'qualifyColumn');
-        $method->setAccessible(true);
-
-        $this->assertSame(
-            '`LEGACY.USERS`.`FNAME`',
-            $method->invoke(null, 'LEGACY.USERS', 'FNAME')
-        );
-    }
-
-    public function test_selected_columns_are_quoted_and_aliased_by_table_initials(): void
+    public function test_selected_columns_are_quoted_by_the_source_grammar_and_aliased_by_table_initials(): void
     {
         $method = new ReflectionMethod(MigrationJobSpawner::class, 'getPrefixedColumns');
         $method->setAccessible(true);
@@ -79,7 +68,8 @@ class SpawnerQueryTest extends TestCase
             $method->invoke($this->spawn())
         );
 
-        $this->assertContains('`USERS`.`FNAME` as `U_FNAME`', $columns);
+        // The source is SQLite, so identifiers are double quoted, not backticked.
+        $this->assertContains('"USERS"."FNAME" as "U_FNAME"', $columns);
     }
 
     public function test_every_source_row_reaches_the_job_exactly_once_when_chunked(): void

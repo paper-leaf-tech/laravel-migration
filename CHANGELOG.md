@@ -2,6 +2,30 @@
 
 All notable changes to `laravel-migration` will be documented in this file
 
+## 2.3.0
+
+Any source driver now works with any destination driver: MySQL/MariaDB, PostgreSQL and SQLite on either side.
+
+### Fixed
+
+- Chunk SQL no longer hard-codes MySQL backticks. Every identifier — the table, qualified key columns, `ORDER BY` columns, selected columns and their aliases — is quoted by the source connection's own query grammar, so a PostgreSQL (or SQL Server) source no longer fails on its first query. SQLite only worked before because it tolerates backticks.
+- A schema-qualified table name works on PostgreSQL. `legacy.user_account` is read as table `user_account` in schema `legacy`, for the chunk queries, joins and primary-key detection alike; the alias prefix is built from the table name alone (`U_A_*`, not `L_U_A_*`).
+- Column aliases are quoted, so PostgreSQL no longer folds them to lower case. Aliases on a PostgreSQL source are upper-cased by default, so job code written against legacy `UPPER_CASE` names (`$item->U_A_USER_ID`) keeps working when the source's unquoted names have been folded to lower case.
+- Window-function support is judged per driver: MySQL 8.0+, MariaDB 10.2+ (under either the `mysql` or `mariadb` driver), SQLite 3.25+, PostgreSQL and SQL Server use keyset chunking. A driver the package does not know now falls back to ordered offset chunking instead of being assumed to accept the boundary SQL.
+- `BulkWriter` respects the destination's bound-parameter limit: 60,000 per statement on MySQL, MariaDB and PostgreSQL as before, 32,000 on SQLite 3.32+ (990 before it), and 2,000 on SQL Server. Id read-backs are capped the same way.
+
+### Added
+
+- An `alias_case` config key (`MIGRATION_ALIAS_CASE`): `upper`, `lower` or `preserve`, or `null` for the driver default (`upper` on PostgreSQL, `preserve` elsewhere). An unknown value is reported before anything is dispatched.
+- `MigrationCommand::getTableNameExpression()` takes an optional connection name and defaults to the configured source connection.
+- An optional, env-gated test that reads a real PostgreSQL table read-only (`MIGRATION_TEST_PGSQL_URL`, `MIGRATION_TEST_PGSQL_TABLE`). It is skipped by default; the suite still needs nothing but SQLite.
+
+### Compatibility
+
+- **MySQL and MariaDB sources are unchanged**: a dot in a table name is still part of one identifier, and aliases keep the catalog's case. The one difference is that the base table is now quoted (`` `USERS` `` rather than `USERS`) and the source connection's table prefix, if it has one, is applied to it, as it already was to joined tables.
+- **A SQLite source now reads a dot as `schema.table`** (an attached database) rather than as part of one table name.
+- `MigrationJobSpawner::qualifyColumn()` is no longer static.
+
 ## 2.2.0
 
 ### Performance

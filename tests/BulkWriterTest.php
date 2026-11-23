@@ -71,9 +71,26 @@ class BulkWriterTest extends TestCase
 
         $this->writer()->insert('users', $rows);
 
-        // 4 columns per row, 60,000 placeholders per statement => 15,000 rows each.
-        $this->assertSame(2, $this->insertCount());
+        // 3 columns per row and an SQLite destination, which is held to
+        // 32,000 placeholders per statement => 10,666 rows each.
+        $this->assertSame(3, $this->insertCount());
         $this->assertSame(25000, DB::connection('testing')->table('users')->count());
+    }
+
+    public function test_the_placeholder_ceiling_follows_the_destination_driver(): void
+    {
+        // Connections are lazy, so these never open a socket.
+        config()->set('database.connections.pg', ['driver' => 'pgsql', 'database' => 'x']);
+        config()->set('database.connections.my', ['driver' => 'mysql', 'database' => 'x']);
+        config()->set('database.connections.ms', ['driver' => 'sqlsrv', 'database' => 'x']);
+
+        $ceiling = fn (string $connection): int => (fn (): int => $this->placeholderCeiling())
+            ->call(new BulkWriter($connection));
+
+        $this->assertSame(60000, $ceiling('pg'));
+        $this->assertSame(60000, $ceiling('my'));
+        $this->assertSame(2000, $ceiling('ms'), 'SQL Server allows 2,100 parameters per statement.');
+        $this->assertLessThanOrEqual(32766, $ceiling('testing'), 'SQLite allows at most 32,766 by default.');
     }
 
     public function test_batches_are_split_by_payload_size_as_well_as_placeholder_count(): void

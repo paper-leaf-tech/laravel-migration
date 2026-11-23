@@ -13,6 +13,7 @@ use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use PaperleafTech\LaravelMigration\Support\SourceIdentifiers;
 
 class MigrationJobSpawner implements ShouldQueue
 {
@@ -70,6 +71,10 @@ class MigrationJobSpawner implements ShouldQueue
         protected array $columns = [],
     ) {
         $this->chunk_size = max(1, $this->chunk_size);
+
+        // Fail on a bad alias_case here, in the command, rather than once per
+        // chunk when handle() builds the select.
+        $this->identifiers()->aliasCase();
 
         $this->primaryKeyColumns = $this->resolvePrimaryKeyColumns();
         $this->keyColumn = $this->resolveKeyColumn();
@@ -144,7 +149,8 @@ class MigrationJobSpawner implements ShouldQueue
             }
 
             // orderByRaw, not orderBy, so the grammar does not re-split the
-            // already quoted qualified identifier on its dots.
+            // already quoted qualified identifier on its dots, which would
+            // break a MySQL table name that contains one.
             $query->orderByRaw($qualifiedKey.' asc');
 
             yield $query;
@@ -401,20 +407,29 @@ class MigrationJobSpawner implements ShouldQueue
     }
 
     /**
-     * The chunk boundary query uses ROW_NUMBER(), which needs MySQL 8.0+ or
-     * MariaDB 10.2+. Every other engine Laravel supports has had window
-     * functions for longer than Laravel has supported the engine.
+     * The chunk boundary query uses ROW_NUMBER() and COUNT(*) OVER (), which
+     * need MySQL 8.0+, MariaDB 10.2+ or SQLite 3.25+. PostgreSQL and SQL
+     * Server have had window functions for longer than Laravel has supported
+     * them. Any other driver falls back to offset chunking, which is still
+     * ordered and deterministic, rather than gambling on the boundary SQL.
      */
     protected function supportsWindowFunctions(): bool
     {
         $connection = DB::connection($this->conn);
 
-        if ($connection->getDriverName() !== 'mysql') {
-            return true;
+        $minimum = match ($connection->getDriverName()) {
+            'mysql', 'mariadb' => null,
+            'sqlite' => '3.25',
+            'pgsql', 'sqlsrv' => true,
+            default => false,
+        };
+
+        if (is_bool($minimum)) {
+            return $minimum;
         }
 
         try {
-            $version = $connection->getServerVersion();
+            $version = (string) $connection->getServerVersion();
         } catch (\Throwable $e) {
             $this->warn('could not determine the server version', $e);
 
@@ -422,15 +437,20 @@ class MigrationJobSpawner implements ShouldQueue
         }
 
         // MariaDB reports either "10.11.2-MariaDB" or, behind the legacy
-        // replication handshake, "5.5.5-10.11.2-MariaDB".
-        $isMariaDb = str_contains(strtolower($version), 'mariadb');
-        $version = preg_replace('/^5\.5\.5-/', '', $version);
+        // replication handshake, "5.5.5-10.11.2-MariaDB", under either the
+        // mysql or the mariadb driver.
+        if ($minimum === null) {
+            $isMariaDb = $connection->getDriverName() === 'mariadb'
+                || str_contains(strtolower($version), 'mariadb');
+            $version = preg_replace('/^5\.5\.5-/', '', $version);
+            $minimum = $isMariaDb ? '10.2' : '8.0';
+        }
 
         if (! preg_match('/^\d+\.\d+(\.\d+)?/', $version, $matches)) {
             return false;
         }
 
-        return version_compare($matches[0], $isMariaDb ? '10.2' : '8.0', '>=');
+        return version_compare($matches[0], $minimum, '>=');
     }
 
     /**
@@ -438,20 +458,25 @@ class MigrationJobSpawner implements ShouldQueue
      */
     protected function qualifyKeyColumn(string $column): string
     {
-        return self::qualifyColumn($this->table, $column);
+        return $this->qualifyColumn($this->table, $column);
     }
 
     /**
-     * Qualify a column against a table.
-     *
-     * This mirrors MigrationCommand::getTableNameExpression() by backticking
-     * the whole table name — which is MySQL/MariaDB specific — so that a table
-     * name containing a dot stays a single identifier instead of being split
-     * into schema and table by the query grammar.
+     * Qualify a column against a table, quoted by the source connection's
+     * grammar. See SourceIdentifiers for how a dot in the table name is read.
      */
-    protected static function qualifyColumn(string $table, string $column): string
+    protected function qualifyColumn(string $table, string $column): string
     {
-        return sprintf('`%s`.`%s`', $table, $column);
+        return $this->identifiers()->column($table, $column);
+    }
+
+    /**
+     * Built on demand rather than held, because a connection does not
+     * serialise and the spawner is a queueable job.
+     */
+    protected function identifiers(): SourceIdentifiers
+    {
+        return SourceIdentifiers::for($this->conn);
     }
 
     protected function getFallbackOrderBy(): ?string
@@ -503,6 +528,11 @@ class MigrationJobSpawner implements ShouldQueue
      * initials of its table name so that same-named columns on joined tables
      * do not collide (USERS.FNAME becomes U_FNAME).
      *
+     * Aliases are quoted, so the case built here is the case the job sees on
+     * every driver. On PostgreSQL that is upper case by default, so a legacy
+     * schema whose names were folded to lower case still yields U_FNAME. See
+     * the alias_case config key.
+     *
      * Returned as expressions because the identifiers are already quoted; a
      * plain string would be re-split on its dots by the grammar.
      *
@@ -510,14 +540,14 @@ class MigrationJobSpawner implements ShouldQueue
      */
     protected function getPrefixedColumns(): array
     {
+        $identifiers = $this->identifiers();
         $columns = [];
 
         foreach ($this->selectedColumns() as [$table, $column]) {
             $columns[] = new Expression(sprintf(
-                '%s as `%s_%s`',
-                self::qualifyColumn($table, $column),
-                $this->aliasPrefix($table),
-                $column
+                '%s as %s',
+                $identifiers->column($table, $column),
+                $identifiers->alias($identifiers->caseAlias($this->aliasPrefix($table).'_'.$column))
             ));
         }
 
@@ -625,11 +655,12 @@ class MigrationJobSpawner implements ShouldQueue
 
     /**
      * The alias prefix for a table: the initials of its underscore-separated
-     * parts, so USER_COMPANY becomes U_C.
+     * parts, so USER_COMPANY becomes U_C. A schema qualifier is not part of
+     * it, so legacy.user_account becomes u_a on PostgreSQL.
      */
     protected function aliasPrefix(string $table): string
     {
-        return collect(explode('_', $table))
+        return collect(explode('_', $this->identifiers()->baseName($table)))
             ->map(fn (string $part): string => substr($part, 0, 1))
             ->implode('_');
     }
